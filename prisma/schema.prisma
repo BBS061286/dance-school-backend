@@ -1,0 +1,936 @@
+// ============================================================================
+// 舞蹈学校管理系统 — Prisma schema（草稿 v0.2）
+// 由设计文档 ~/workspace/dance-school/design-doc-v2.md（v2，2026-10-01，
+// 含 R1–R8 修订与 v2.1 F1–F5 修正）逐节转写。
+// 相对 v0.1（按 v1 文档，2026-09-29 经 Prisma 6.19.3 WASM DMMF 校验通过）的改动：
+//   R8a: Course.termWeeks → totalSessions；6.1/6.8 注释同步
+//   R8f: ClassSession.capacity 改为可空（继承 Course.capacity；PRIVATE 强制 1 由 service 层保证）
+//   R6 : ClassSession 新增 enrolledCount 计数器（并发控制方案 B）
+//   R1 : Enrollment 新增 waitlistPosition / paymentExpiresAt / promotedAt / promotionTimedOut
+//        + @@unique([classSessionId, waitlistPosition])（PostgreSQL 下等价于文档的部分唯一索引）
+//   F4 : 删除 Enrollment.orderId 与 EventRegistration.orderId，订单关联统一经 OrderItem
+//   F1 : ReminderTargetType.CLASS_SESSION → SESSION_OCCURRENCE；SessionOccurrence 新增 timeRange
+//   R7 : Event 新增 timezone（IANA；仅线上活动使用）；Campus.timezone 注释明确 IANA
+//   R4 : 新增 RefundRecord；OrderStatus 新增 PARTIALLY_PAID / PARTIALLY_REFUNDED
+//   R8e: 新增 EventRegistrationOrder（替代 EventRegistration.order_id）
+//   R8c: Order.stripePaymentIntentId / Payment.stripeChargeId / RefundRecord.stripeRefundId 加唯一约束
+//   R5 : Payment 收款语义注释（recordedBy 管理员代收时必填）；Order.status 由流水派生
+//   R8b: 删除 User.age（年龄唯一事实来源为 Student.dob）
+//   R2 : CheckInMethod 新增 INSTRUCTOR
+//   R1 : NotificationType 新增 WAITLIST_PROMOTED；
+//   F3 : NotificationSourceType 新增 ENROLLMENT / SESSION_OCCURRENCE
+// 保持草稿值（开放问题，见汇报）：Gender = MALE/FEMALE/OTHER；Payment.paidAt 必填 @default(now())；
+//   Enrollment 未加 @@unique([classSessionId, studentId])。
+// 状态：DRAFT —— 尚未跑 `prisma format`。
+// 字段名采用 Prisma camelCase 惯例（对应文档中的 snake_case），关系均按文档 FK 关系建模。
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ------------------------------ 枚举 ----------------------------------------
+
+enum UserRole {
+  ADMIN
+  INSTRUCTOR
+  PARENT
+  ADULT_STUDENT
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  // 开放问题：文档未定义该枚举值，暂用草稿值，需用户确认
+}
+
+enum Relationship {
+  MOTHER
+  FATHER
+  GUARDIAN
+  OTHER
+  SELF // 成人学员自己绑定自己（6.10）
+}
+
+enum CourseFormat {
+  GROUP
+  PRIVATE
+  MASTER
+}
+
+enum CourseAudience {
+  YOUTH
+  ADULT
+  ALL
+}
+
+enum SkillLevel {
+  NONE
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum CourseStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum PricingType {
+  PACKAGE
+  PER_SESSION
+  TERM
+}
+
+enum ClassSessionStatus {
+  SCHEDULED
+  CANCELLED
+  COMPLETED
+}
+
+enum EnrollmentStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  WAITLISTED
+  CANCELLED
+  REFUNDED
+}
+
+enum NoticeScopeType {
+  ALL
+  CAMPUS
+  COURSE
+  CLASS_SESSION
+  FAMILY
+}
+
+enum EventStatus {
+  SCHEDULED
+  CANCELLED
+  COMPLETED
+}
+
+enum EventCategory {
+  EVENT
+  COMPETITION
+}
+
+enum RegistrationStatus {
+  REGISTERED
+  WAITLISTED
+  CANCELLED
+}
+
+enum EventRegistrationItemType {
+  TICKET            // 门票款
+  PARTICIPATION_FEE // 参赛费/参与费
+}
+
+enum ReminderTargetType {
+  SESSION_OCCURRENCE // v2.1 F1：提醒针对每一节具体课，而非整个班级档期
+  EVENT
+}
+
+enum ReminderSendStatus {
+  SENT
+  FAILED
+}
+
+enum OrderStatus {
+  PENDING
+  PARTIALLY_PAID    // v2 R5：部分支付
+  PAID
+  PARTIALLY_REFUNDED // v2 R4：部分退款
+  REFUNDED
+  FAILED
+  CANCELLED
+}
+
+enum OrderPaymentMethod {
+  STRIPE
+  OFFLINE
+}
+
+enum PaymentMethod {
+  STRIPE
+  ZELLE
+  PAYPAL
+  CASH
+  CHECK
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING_CONFIRM // 线下/非即时到账，待管理员核实
+  SUCCEEDED
+  FAILED
+  REFUNDED // 仅兼容历史数据；退款金额统一记 RefundRecord（v2 R4）
+}
+
+enum FeeStatus {
+  NOT_SET
+  ISSUED
+  PAID
+}
+
+enum OccurrenceStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  POSTPONED
+}
+
+enum CheckInMethod {
+  SELF
+  INSTRUCTOR // v2 R2：教师点名，语义与 ADMIN 相同，直接 CONFIRMED
+  ADMIN
+}
+
+enum AttendanceStatus {
+  PENDING_CONFIRMATION
+  CONFIRMED
+}
+
+enum MakeupBookingStatus {
+  BOOKED
+  ATTENDED
+  CANCELLED
+}
+
+enum ExtraLessonType {
+  ONE_ON_ONE
+  TEMP_GROUP
+}
+
+enum ExtraLessonAudience {
+  YOUTH
+  ADULT
+}
+
+enum ExtraLessonInitiator {
+  STUDENT
+  ADMIN
+  COURSE_PURCHASE
+}
+
+enum ExtraLessonSlotStatus {
+  PENDING_ADMIN
+  ADMIN_PROPOSED_ALT
+  PENDING_STUDENT
+  CONFIRMED
+  DECLINED
+}
+
+enum ParticipantRole {
+  PARENT
+  ADULT_STUDENT
+  INSTRUCTOR
+}
+
+enum SenderRole {
+  PARENT
+  ADULT_STUDENT
+  INSTRUCTOR
+  ADMIN
+}
+
+enum DocumentAudience {
+  ALL
+  YOUTH
+  ADULT
+}
+
+enum NotificationType {
+  NOTICE
+  MESSAGE_REPLY
+  INSTRUCTOR_ASSIGNMENT
+  EXTRA_LESSON_UPDATE
+  DOCUMENT_SIGN_REQUEST
+  REVIEW_PUBLISHED
+  EVENT_REMINDER
+  CLASS_REMINDER
+  PAYMENT_REMINDER
+  WAITLIST_PROMOTED // v2 R1：候补转正通知
+}
+
+enum NotificationSourceType {
+  NOTICE
+  MESSAGE
+  COURSE
+  EXTRA_LESSON_SLOT
+  DOCUMENT
+  REVIEW
+  EVENT
+  ORDER
+  ENROLLMENT        // v2 R1：候补转正通知来源
+  SESSION_OCCURRENCE // v2.1 F3：课次取消/顺延与上课提醒来源
+}
+
+// ------------------------------ 2.1 User ------------------------------------
+
+model User {
+  id           String    @id @default(uuid())
+  role         UserRole
+  name         String
+  email        String    @unique
+  phone        String?
+  passwordHash String
+  avatarUrl    String?
+  isActive     Boolean   @default(true)
+  // 6.10 成人学员补充字段（role = ADULT_STUDENT 时使用）
+  // v2 R8b：年龄唯一事实来源是 Student.dob，User 上不再存储 age
+  preferredCampusIds String[] // 常去/可参加的校区 UUID 数组（Prisma 无原生 UUID[]，用 String[]）
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  instructorProfile   Instructor?
+  parentLinks         ParentStudentLink[]  @relation("ParentLinks")
+  enrollmentsMade     Enrollment[]         @relation("EnrolledBy")
+  noticesCreated      Notice[]             @relation("NoticeCreator")
+  makeupEligibilityCreated MakeupEligibility[] @relation("MakeupEligibilityCreator")
+  paymentsRecorded    Payment[]            @relation("PaymentRecorder")
+  refundsMade         RefundRecord[]
+  courseReviews       CourseReview[]
+  studentReviews      StudentReview[]
+  documentsCreated    Document[]           @relation("DocumentCreator")
+  messageThreads      MessageThread[]      @relation("ThreadParticipant")
+  messagesSent        Message[]            @relation("MessageSender")
+  notifications       Notification[]
+  reminderLogs        ReminderLog[]        @relation("ReminderRecipient")
+  signaturesMade      DocumentSignature[]  @relation("SignedBy")
+  orders              Order[]              @relation("OrderParent")
+  eventRegistrations EventRegistration[]
+  extraLessonRequestsCreated ExtraLessonRequest[] @relation("ExtraLessonCreator")
+  attendanceConfirmed AttendanceRecord[]   @relation("AttendanceConfirmer")
+}
+
+// --------------------------- 2.2 Instructor ---------------------------------
+
+model Instructor {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id])
+  bio             String?
+  specialties     String[] // 如 Ballet / HipHop
+  defaultCampusId String?
+  defaultCampus   Campus?  @relation(fields: [defaultCampusId], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  courseLinks     CourseInstructor[]
+  classSessions   ClassSession[]
+  checkins        InstructorCheckin[]
+  extraLessons    ExtraLessonRequest[] @relation("LessonInstructor")
+}
+
+// ---------------------------- 2.3 Student -----------------------------------
+
+model Student {
+  id           String    @id @default(uuid())
+  name         String
+  dob          DateTime? @db.Date // v2 R8b：学员年龄的唯一事实来源（含成人学员）
+  gender       Gender?
+  medicalNotes String?
+  photoUrl     String?
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  parentLinks        ParentStudentLink[]
+  enrollments        Enrollment[]
+  eventRegistrations EventRegistration[]
+  extraLessonRequests ExtraLessonRequest[]
+  studentReviews     StudentReview[]
+  documentSignatures DocumentSignature[]
+}
+
+// ------------------------ 2.4 ParentStudentLink ------------------------------
+
+model ParentStudentLink {
+  id              String       @id @default(uuid())
+  parentId        String
+  parent          User         @relation("ParentLinks", fields: [parentId], references: [id])
+  studentId       String
+  student         Student      @relation(fields: [studentId], references: [id])
+  relationship    Relationship
+  isPrimaryContact Boolean     @default(false)
+  canPay          Boolean      @default(true)
+  createdAt       DateTime     @default(now())
+
+  @@unique([parentId, studentId])
+}
+
+// ---------------------------- 2.5 Campus ------------------------------------
+
+model Campus {
+  id        String   @id @default(uuid())
+  name      String
+  address   String?
+  city      String?
+  phone     String?
+  // v2 R7：IANA 时区名，提醒触发时刻以此为基准计算（第五章）
+  timezone  String   @default("America/New_York")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  courseLinks      CourseCampus[]
+  classSessions    ClassSession[]
+  events           Event[]
+  residentInstructors Instructor[]
+}
+
+// ---------------------------- 2.6 Course ------------------------------------
+
+model Course {
+  id          String         @id @default(uuid())
+  title       String
+  description String?
+  format      CourseFormat
+  audience    CourseAudience
+  // audience = ALL 时可选填的成人端年龄区间；为空时成人端回退使用 minAge/maxAge（v2 R3）
+  altMinAge   Int?
+  altMaxAge   Int?
+  skillLevel  SkillLevel     @default(NONE)
+  minAge      Int
+  maxAge      Int?
+  danceStyle  String?
+  weekdays    Int[]          // 0-6，固定排课星期几
+  timeRange   String?        // weekdays 中所有星期几的默认上课时间；课次预览后可逐节覆盖（v2 R8g）
+  term        String?        // YYYY-SPRING / YYYY-FALL
+  pricingType PricingType
+  requiresPayment Boolean    @default(true)
+  priceCents  Int
+  currency    String         @default("usd")
+  packageSize Int?           // 课包包含次数
+  totalSessions Int?         // v2 R8a：按期总课次数（原 termWeeks），与 weekdays 配合排课
+  startDate   DateTime       @db.Date
+  endDate     DateTime?      @db.Date
+  address     String?
+  // v2 R8f：最大人数上限，作为其下 ClassSession 的默认名额
+  capacity    Int
+  coverImageUrl String?
+  status      CourseStatus   @default(DRAFT)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  campuses       CourseCampus[]
+  instructors    CourseInstructor[]
+  classSessions  ClassSession[]
+  reviews        CourseReview[]
+  extraLessonProducts ExtraLessonRequest[] @relation("SourceCourse")
+}
+
+// ------------------- 2.7 CourseCampus / 2.8 CourseInstructor -----------------
+
+model CourseCampus {
+  courseId  String
+  course    Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  campusId  String
+  campus    Campus @relation(fields: [campusId], references: [id], onDelete: Cascade)
+
+  @@id([courseId, campusId])
+}
+
+model CourseInstructor {
+  courseId     String
+  course       Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  instructorId String
+  instructor   Instructor @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+
+  @@id([courseId, instructorId])
+}
+
+// -------------------------- 2.9 ClassSession ---------------------------------
+
+model ClassSession {
+  id               String             @id @default(uuid())
+  courseId         String
+  course           Course             @relation(fields: [courseId], references: [id])
+  campusId         String
+  campus           Campus             @relation(fields: [campusId], references: [id])
+  instructorId     String
+  instructor       Instructor         @relation(fields: [instructorId], references: [id])
+  room             String?
+  startTime        DateTime
+  endTime          DateTime
+  recurrenceRule   String?            // RRULE
+  // v2 R8f：为空时继承 Course.capacity；Course.format = PRIVATE 时强制为 1（service 层保证）
+  capacity         Int?
+  // v2 R6：已占名额计数器（status ∈ {CONFIRMED, PENDING_PAYMENT} 的 Enrollment 数），供 4.6 并发控制方案 B
+  enrolledCount    Int                @default(0)
+  waitlistCapacity Int                @default(0)
+  status           ClassSessionStatus @default(SCHEDULED)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  // 有效名额 effective_capacity = (Course.format = PRIVATE) ? 1 : COALESCE(ClassSession.capacity, Course.capacity)
+  // 全文"名额/capacity 判断"均指有效名额（v2 §2.9）
+
+  enrollments          Enrollment[]
+  occurrences          SessionOccurrence[]
+  makeupSources        MakeupEligibility[] @relation("MakeupSource")
+  makeupTargets        MakeupEligibility[] @relation("MakeupTarget")
+  studentReviews       StudentReview[]
+  instructorCheckins   InstructorCheckin[]
+}
+
+// --------------------------- 2.10 Enrollment ---------------------------------
+
+model Enrollment {
+  id                 String           @id @default(uuid())
+  classSessionId     String
+  classSession       ClassSession     @relation(fields: [classSessionId], references: [id])
+  studentId          String
+  student            Student          @relation(fields: [studentId], references: [id])
+  enrolledByParentId String
+  enrolledBy         User             @relation("EnrolledBy", fields: [enrolledByParentId], references: [id])
+  status             EnrollmentStatus @default(PENDING_PAYMENT)
+  // v2 R1 / v2.1 F2：候补队列与支付超时字段
+  waitlistPosition   Int?             // 候补序号，从 1 开始；仅 status = WAITLISTED 时有值
+  paymentExpiresAt   DateTime?        // PENDING_PAYMENT 的支付截止时间；离开该状态后置 null
+  promotedAt         DateTime?        // 候补转正时间；非空表示该记录来自候补转正
+  promotionTimedOut  Boolean          @default(false) // 曾因转正后支付超时被回退；自动转正跳过，只能管理员手动转正
+  enrolledAt         DateTime         @default(now())
+  cancelledAt        DateTime?
+  cancelReason       String?
+  // v2.1 F4：删除 orderId；订单关联统一经 OrderItem.enrollmentId（一笔报名的首付、补缴可分属多笔订单）
+
+  attendanceRecords AttendanceRecord[]
+  makeupBookings    MakeupBooking[]
+  orderItems        OrderItem[]
+  extraLessonSources ExtraLessonRequest[] @relation("SourceEnrollment")
+
+  // PostgreSQL 中 NULL 在唯一约束里互不相等：非候补记录的 waitlistPosition 为 NULL，
+  // 因此该约束等价于文档要求的部分唯一索引 (class_session_id, waitlist_position) WHERE status = 'WAITLISTED'
+  @@unique([classSessionId, waitlistPosition])
+}
+
+// ---------------------------- 2.11 Notice ------------------------------------
+
+model Notice {
+  id        String          @id @default(uuid())
+  title     String
+  content   String
+  scopeType NoticeScopeType
+  scopeId   String?         // Campus / Course / ClassSession / Parent 的 id；ALL 时为空
+  channels  String[]        // 如 ['app_push','email']
+  createdById String
+  createdBy User            @relation("NoticeCreator", fields: [createdById], references: [id])
+  sentAt    DateTime?
+  createdAt DateTime        @default(now())
+}
+
+// ------------------------- 2.12 Event（+ 6.5 扩展） --------------------------
+
+model Event {
+  id                  String        @id @default(uuid())
+  title               String
+  description         String?
+  campusId            String?
+  campus              Campus?       @relation(fields: [campusId], references: [id])
+  // v2 R7：IANA 时区名；仅 campusId 为空（线上活动）时使用，默认 America/New_York
+  timezone            String?
+  location            String?
+  startTime           DateTime
+  endTime             DateTime
+  requiresRegistration Boolean      @default(true)
+  capacity            Int?
+  status              EventStatus   @default(SCHEDULED)
+  // 6.5 比赛/活动扩展
+  category            EventCategory @default(EVENT)
+  requiresTicket      Boolean       @default(false)
+  ticketPriceCents    Int?
+  maxTicketsPerRegistration Int?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  registrations EventRegistration[]
+}
+
+// --------------------- 2.13 EventRegistration（+ 6.6） -----------------------
+
+model EventRegistration {
+  id               String             @id @default(uuid())
+  eventId          String
+  event            Event              @relation(fields: [eventId], references: [id])
+  studentId        String?
+  student          Student?           @relation(fields: [studentId], references: [id])
+  parentId         String
+  parent           User               @relation(fields: [parentId], references: [id])
+  status           RegistrationStatus @default(REGISTERED)
+  // 6.6 购票/参赛费扩展
+  ticketQuantity     Int?
+  ticketTotalCents   Int?
+  participationFeeCents Int?
+  feeStatus          FeeStatus        @default(NOT_SET)
+  // v2 R8e：删除 orderId；改用 EventRegistrationOrder 关联表（门票款与参赛费可拆单）
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  orderItems OrderItem[]
+  registrationOrders EventRegistrationOrder[]
+}
+
+// ------------- 6.6 EventRegistrationOrder（活动报名-订单关联） ----------------
+
+model EventRegistrationOrder {
+  eventRegistrationId String
+  eventRegistration   EventRegistration @relation(fields: [eventRegistrationId], references: [id], onDelete: Cascade)
+  orderId             String
+  order               Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  itemType            EventRegistrationItemType // TICKET 门票款 / PARTICIPATION_FEE 参赛费
+
+  @@id([eventRegistrationId, orderId])
+}
+
+// ------------------- 2.14 ReminderRule / 2.15 ReminderLog --------------------
+
+model ReminderRule {
+  id                String             @id @default(uuid())
+  targetType        ReminderTargetType // v2.1 F1：SESSION_OCCURRENCE（每节具体课）或 EVENT
+  offsetHoursBefore Int                // 按目标所在时区计算（第五章时区基准）
+  channels          String[]           // ['sms','email','push']
+  templateKey       String
+  isActive          Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  logs ReminderLog[]
+}
+
+model ReminderLog {
+  id          String             @id @default(uuid())
+  ruleId      String
+  rule        ReminderRule       @relation(fields: [ruleId], references: [id])
+  targetId    String             // SessionOccurrence.id 或 Event.id（v2.1 F1：同一规则对一个班级的每节课各提醒一次）
+  recipientId String
+  recipient   User               @relation("ReminderRecipient", fields: [recipientId], references: [id])
+  channel     String
+  status      ReminderSendStatus
+  sentAt      DateTime           @default(now())
+
+  @@unique([ruleId, targetId, recipientId]) // 去重
+}
+
+// ----------------- 2.16 Order / Payment / RefundRecord ------------------------
+
+model Order {
+  id                   String            @id @default(uuid())
+  parentId             String
+  parent               User              @relation("OrderParent", fields: [parentId], references: [id])
+  amountCents          Int               // 应付总额
+  currency             String            @default("usd")
+  // v2 R4/R5：除 FAILED / CANCELLED（显式终态）外，status 均由 Payment 与 RefundRecord
+  // 流水派生，禁止直接修改。派生规则：
+  //   paid = Σ SUCCEEDED Payment；refunded = Σ RefundRecord（约束 refunded ≤ paid）
+  //   refunded > 0：refunded = paid → REFUNDED，否则 PARTIALLY_REFUNDED
+  //   refunded = 0：paid = 0 → PENDING；0 < paid < amountCents → PARTIALLY_PAID；paid ≥ amountCents → PAID
+  status               OrderStatus       @default(PENDING)
+  // 下单时选择的收款渠道，仅用于展示与引导；实际收款方式以各条 Payment.method 为准
+  paymentMethod        OrderPaymentMethod @default(STRIPE)
+  // v2 R8c：Stripe 幂等键，唯一约束保证 webhook 重复回调不重复建单
+  stripePaymentIntentId String?          @unique
+  createdAt            DateTime          @default(now())
+  paidAt               DateTime?
+
+  items              OrderItem[]
+  payments           Payment[]
+  refunds            RefundRecord[]
+  eventRegistrationOrders EventRegistrationOrder[]
+}
+
+model OrderItem {
+  id                  String             @id @default(uuid())
+  orderId             String
+  order               Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  enrollmentId        String?
+  enrollment          Enrollment?        @relation(fields: [enrollmentId], references: [id])
+  eventRegistrationId String?
+  eventRegistration   EventRegistration? @relation(fields: [eventRegistrationId], references: [id])
+  description         String
+  amountCents         Int
+
+  refunds RefundRecord[]
+}
+
+model Payment {
+  id             String        @id @default(uuid())
+  orderId        String
+  order          Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amountCents    Int
+  method         PaymentMethod
+  // v2 R8c：唯一约束保证 Stripe webhook 重复回调不会重复入账
+  stripeChargeId String?       @unique
+  externalRef    String?       // Zelle/PayPal 交易备注或参考号
+  status         PaymentStatus @default(PENDING_CONFIRM)
+  recordedById   String?
+  // v2 R5：管理员线下代收时 recordedBy 必填（管理员即核实人，跳过 PENDING_CONFIRM）；
+  // 学员自助提交后由管理员确认时，记录确认人
+  recordedBy     User?         @relation("PaymentRecorder", fields: [recordedById], references: [id])
+  // 开放问题：按文档原样保留必填 @default(now())；PENDING_CONFIRM 的付款在创建时即被打时间戳，
+  // 语义上 paidAt 应为可空——等用户确认后再改
+  paidAt         DateTime      @default(now())
+}
+
+// v2 R4：退款记录（退款金额统一记在这里，不再通过修改 Payment.status 表达）
+model RefundRecord {
+  id             String    @id @default(uuid())
+  orderId        String
+  order          Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderItemId    String?   // 退款对应的明细行（定位到具体 Enrollment / EventRegistration）
+  orderItem      OrderItem? @relation(fields: [orderItemId], references: [id])
+  amountCents    Int       // 正向金额
+  reason         String?
+  refundedById   String    // 操作人（管理员，或 Stripe webhook 使用的系统账号）
+  refundedBy     User      @relation(fields: [refundedById], references: [id])
+  // v2 R8c：仅 Stripe 退款；唯一约束保证退款 webhook 幂等
+  stripeRefundId String?   @unique
+  createdAt      DateTime  @default(now())
+}
+
+// ---------------------- 6.1 SessionOccurrence --------------------------------
+
+model SessionOccurrence {
+  id                      String            @id @default(uuid())
+  classSessionId          String
+  classSession            ClassSession      @relation(fields: [classSessionId], references: [id], onDelete: Cascade)
+  sessionNumber           Int
+  date                    DateTime          @db.Date
+  status                  OccurrenceStatus  @default(SCHEDULED)
+  cancelReason            String?
+  postponedToOccurrenceId String?           @unique
+  postponedTo             SessionOccurrence? @relation("PostponeChain", fields: [postponedToOccurrenceId], references: [id])
+  postponedFrom           SessionOccurrence? @relation("PostponeChain")
+  // v2.1 F1：本节上课时间，覆盖 Course.timeRange；为空时取课程默认时间；提醒计算使用此值
+  timeRange               String?
+
+  attendanceRecords AttendanceRecord[]
+  missedBookings    MakeupBooking[] @relation("MissedOccurrence")
+  makeupBookings    MakeupBooking[] @relation("MakeupOccurrence")
+  instructorCheckins InstructorCheckin[]
+}
+
+// ---------------------- 6.2 AttendanceRecord ---------------------------------
+
+model AttendanceRecord {
+  id                 String           @id @default(uuid())
+  sessionOccurrenceId String
+  sessionOccurrence  SessionOccurrence @relation(fields: [sessionOccurrenceId], references: [id], onDelete: Cascade)
+  enrollmentId       String
+  enrollment         Enrollment       @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  checkInMethod      CheckInMethod
+  checkedInAt        DateTime         @default(now())
+  status             AttendanceStatus @default(PENDING_CONFIRMATION)
+  confirmedById      String?
+  confirmedBy        User?            @relation("AttendanceConfirmer", fields: [confirmedById], references: [id])
+  confirmedAt        DateTime?
+  isMakeup           Boolean          @default(false)
+
+  @@unique([sessionOccurrenceId, enrollmentId])
+}
+
+// ---------------------- 6.3 MakeupEligibility --------------------------------
+
+model MakeupEligibility {
+  id                    String       @id @default(uuid())
+  sourceClassSessionId  String
+  sourceClassSession    ClassSession @relation("MakeupSource", fields: [sourceClassSessionId], references: [id], onDelete: Cascade)
+  eligibleClassSessionId String
+  eligibleClassSession  ClassSession @relation("MakeupTarget", fields: [eligibleClassSessionId], references: [id], onDelete: Cascade)
+  createdById           String
+  createdBy             User         @relation("MakeupEligibilityCreator", fields: [createdById], references: [id])
+  createdAt             DateTime     @default(now())
+
+  @@unique([sourceClassSessionId, eligibleClassSessionId])
+}
+
+// ------------------------ 6.4 MakeupBooking ----------------------------------
+
+model MakeupBooking {
+  id                 String              @id @default(uuid())
+  enrollmentId       String
+  enrollment         Enrollment          @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  missedOccurrenceId String?
+  missedOccurrence   SessionOccurrence?  @relation("MissedOccurrence", fields: [missedOccurrenceId], references: [id])
+  makeupOccurrenceId String
+  makeupOccurrence   SessionOccurrence   @relation("MakeupOccurrence", fields: [makeupOccurrenceId], references: [id])
+  status             MakeupBookingStatus @default(BOOKED)
+  bookedAt           DateTime            @default(now())
+}
+
+// ------------- 6.8 ExtraLessonRequest / 6.9 ExtraLessonSlot ------------------
+
+model ExtraLessonRequest {
+  id                 String               @id @default(uuid())
+  type               ExtraLessonType
+  studentId          String
+  student            Student              @relation(fields: [studentId], references: [id])
+  audience           ExtraLessonAudience
+  content            String?
+  location           String?
+  initiatedBy        ExtraLessonInitiator
+  sourceCourseId     String?
+  sourceCourse       Course?              @relation("SourceCourse", fields: [sourceCourseId], references: [id])
+  sourceEnrollmentId String?
+  sourceEnrollment   Enrollment?          @relation("SourceEnrollment", fields: [sourceEnrollmentId], references: [id])
+  instructorId       String?              // 6.17 任教教师
+  instructor         Instructor?          @relation("LessonInstructor", fields: [instructorId], references: [id])
+  createdById        String
+  createdBy          User                 @relation("ExtraLessonCreator", fields: [createdById], references: [id])
+  adminNote          String?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  slots ExtraLessonSlot[]
+}
+
+model ExtraLessonSlot {
+  id           String                @id @default(uuid())
+  requestId    String
+  request      ExtraLessonRequest    @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  date         DateTime              @db.Date
+  time         String                // 如 "17:00-18:00"
+  status       ExtraLessonSlotStatus @default(PENDING_ADMIN)
+  altDate      DateTime?             @db.Date
+  altTime      String?
+  feeCents     Int?
+  feeStatus    FeeStatus             @default(NOT_SET)
+  confirmedAt  DateTime?
+  // 6.15 评价字段
+  reviewContent String?
+  reviewedAt    DateTime?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  instructorCheckins InstructorCheckin[]
+}
+
+// ------------------ 6.13 CourseReview / 6.14 StudentReview --------------------
+
+model CourseReview {
+  id        String   @id @default(uuid())
+  courseId  String
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  content   String
+  createdById String
+  createdBy User     @relation(fields: [createdById], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model StudentReview {
+  id             String       @id @default(uuid())
+  classSessionId String
+  classSession   ClassSession @relation(fields: [classSessionId], references: [id], onDelete: Cascade)
+  studentId      String
+  student        Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  content        String
+  createdById    String
+  createdBy      User         @relation(fields: [createdById], references: [id])
+  createdAt      DateTime     @default(now())
+}
+
+// ---------------------- 6.18 InstructorCheckin -------------------------------
+
+model InstructorCheckin {
+  id                  String             @id @default(uuid())
+  instructorId        String
+  instructor          Instructor         @relation(fields: [instructorId], references: [id])
+  classSessionId      String?
+  classSession        ClassSession?      @relation(fields: [classSessionId], references: [id])
+  sessionOccurrenceId String?
+  sessionOccurrence   SessionOccurrence? @relation(fields: [sessionOccurrenceId], references: [id])
+  extraLessonSlotId   String?
+  extraLessonSlot     ExtraLessonSlot?   @relation(fields: [extraLessonSlotId], references: [id])
+  campus              String
+  date                DateTime           @db.Date
+  time                String
+  checkedInAt         DateTime           @default(now())
+}
+
+// ------------------- 6.22 MessageThread / Message -----------------------------
+
+model MessageThread {
+  id              String          @id @default(uuid())
+  participantId   String
+  participant     User            @relation("ThreadParticipant", fields: [participantId], references: [id])
+  participantRole ParticipantRole
+  lastMessageAt   DateTime        @default(now())
+  createdAt       DateTime        @default(now())
+
+  messages Message[]
+
+  @@unique([participantId]) // 一用户与管理端仅一条 thread
+}
+
+model Message {
+  id         String     @id @default(uuid())
+  threadId   String
+  thread     MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  senderId   String
+  sender     User       @relation("MessageSender", fields: [senderId], references: [id])
+  senderRole SenderRole
+  body       String
+  createdAt  DateTime   @default(now())
+  readAt     DateTime?
+}
+
+// ---------------- 6.24 Document / DocumentSignature --------------------------
+
+model Document {
+  id                    String           @id @default(uuid())
+  title                 String
+  fileUrl               String
+  requiresSignature     Boolean          @default(true)
+  audience              DocumentAudience @default(ALL)
+  version               Int              @default(1)
+  supersedesDocumentId  String?          @unique
+  supersedes            Document?        @relation("VersionChain", fields: [supersedesDocumentId], references: [id])
+  supersededBy          Document?        @relation("VersionChain")
+  requiresResignOnUpdate Boolean         @default(false)
+  createdById           String
+  createdBy             User             @relation("DocumentCreator", fields: [createdById], references: [id])
+  createdAt             DateTime         @default(now())
+
+  signatures DocumentSignature[]
+}
+
+model DocumentSignature {
+  id              String   @id @default(uuid())
+  documentId      String
+  document        Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentVersion Int      // 冗余：签署时的 Document.version
+  studentId       String
+  student         Student  @relation(fields: [studentId], references: [id])
+  signedById      String
+  signedBy        User     @relation("SignedBy", fields: [signedById], references: [id])
+  signatureImage  String   // 电子签名图片（base64/URL）
+  signedAt        DateTime @default(now())
+
+  @@unique([documentId, studentId]) // 同一版本同一学员只签一次
+}
+
+// ------------------------- 6.28 Notification ---------------------------------
+
+model Notification {
+  id         String                @id @default(uuid())
+  userId     String
+  user       User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       NotificationType
+  title      String
+  body       String
+  sourceType NotificationSourceType
+  sourceId   String                // 多态来源 id（Notice.id / Message.id / Course.id …）
+  channels   String[]
+  readAt     DateTime?
+  createdAt  DateTime              @default(now())
+
+  @@index([userId, readAt])
+}
