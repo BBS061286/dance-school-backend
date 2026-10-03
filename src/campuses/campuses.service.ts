@@ -1,11 +1,15 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCampusDto, UpdateCampusDto } from './dto/campus.dto';
 
 /**
  * 校区管理服务（管理端统一管控）：
  * 校区列表/详情（含关联班级、活动、教师计数）、新建、编辑、
- * 删除采用软删除（isActive=false），避免破坏已有班级与活动的外键关联。
+ * 停用（isActive=false，软下线）、删除（真删除，仅无关联数据时允许）。
  */
 @Injectable()
 export class CampusesService {
@@ -59,12 +63,12 @@ export class CampusesService {
   }
 
   /**
-   * DELETE /admin/campuses/:id：停用校区（软删除）。
-   * 校区下可能仍有班级/活动/教师关联，硬删除会破坏外键，
-   * 故仅置 isActive=false；前端据此展示"已停用"并可重新启用。
+   * DELETE /admin/campuses/:id：彻底删除校区。
+   * 仅当校区下没有任何关联数据（班级/活动/常驻教师/课程关联）时允许；
+   * 否则抛 409，提示改用停用（PATCH isActive=false）下线。
    */
   async remove(id: string) {
-    const campus = await this.ensureExists(id);
+    await this.ensureExists(id);
     const counts = await this.prisma.campus.findUniqueOrThrow({
       where: { id },
       select: {
@@ -78,21 +82,17 @@ export class CampusesService {
         },
       },
     });
-    const updated = await this.prisma.campus.update({
-      where: { id },
-      data: { isActive: false },
-    });
-    return {
-      ...updated,
-      _count: counts._count,
-      hadRelations:
-        counts._count.classSessions +
-          counts._count.events +
-          counts._count.residentInstructors +
-          counts._count.courseLinks >
-        0,
-      note: campus.isActive ? undefined : '该校区原本就已停用',
-    };
+    const c = counts._count;
+    const total = c.classSessions + c.events + c.residentInstructors + c.courseLinks;
+    if (total > 0) {
+      throw new ConflictException(
+        `该校区下还有 ${c.classSessions} 个班级、${c.events} 个活动、` +
+          `${c.residentInstructors} 位常驻教师、${c.courseLinks} 个课程关联，无法删除；` +
+          `如需下线请使用停用功能`,
+      );
+    }
+    await this.prisma.campus.delete({ where: { id } });
+    return { id, deleted: true };
   }
 
   private async ensureExists(id: string) {

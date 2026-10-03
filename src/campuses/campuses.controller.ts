@@ -42,7 +42,7 @@ export class CampusesController {
     return this.campuses.update(id, dto);
   }
 
-  /** 停用校区（软删除）：DELETE /admin/campuses/:id */
+  /** 彻底删除校区（仅无关联数据时）：DELETE /admin/campuses/:id */
   @Delete('admin/campuses/:id')
   remove(@Param('id') id: string) {
     return this.campuses.remove(id);
