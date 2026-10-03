@@ -27,4 +27,9 @@ export class AdminCoursesQuery {
   @IsOptional()
   @IsEnum(CourseAudience)
   audience?: CourseAudience;
+
+  /** 校区 id */
+  @IsOptional()
+  @IsString()
+  campus?: string;
 }

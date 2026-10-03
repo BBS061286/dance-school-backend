@@ -210,6 +210,9 @@ export class CoursesService {
         ...(query.status ? { status: query.status } : {}),
         ...(query.format ? { format: query.format } : {}),
         ...(query.audience ? { audience: query.audience } : {}),
+        ...(query.campus
+          ? { campuses: { some: { campusId: query.campus } } }
+          : {}),
       },
       select: {
         id: true,
