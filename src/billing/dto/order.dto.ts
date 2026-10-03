@@ -50,3 +50,47 @@ export class AdminOrdersQuery {
   @IsString()
   term?: string;
 }
+
+/** 退款中心-课程报名查询条件 */
+export class RefundEnrollmentQuery {
+  /** 学期 id */
+  @IsOptional()
+  @IsString()
+  term?: string;
+
+  /** 课程类型：大课 GROUP / 大师课 MASTER / 私教课 PRIVATE */
+  @IsOptional()
+  @IsString()
+  format?: string;
+
+  /** 校区 id */
+  @IsOptional()
+  @IsString()
+  campus?: string;
+
+  /** 课程 id */
+  @IsOptional()
+  @IsString()
+  course?: string;
+
+  /** 学员姓名关键字 */
+  @IsOptional()
+  @IsString()
+  student?: string;
+}
+
+/** 退款中心-活动报名查询条件 */
+export class RefundEventRegistrationQuery {
+  /** 活动 id */
+  @IsOptional()
+  @IsString()
+  event?: string;
+}
+
+/** 退款记录查询条件 */
+export class RefundRecordQuery {
+  /** 学期 id（仅课程报名类退款） */
+  @IsOptional()
+  @IsString()
+  term?: string;
+}

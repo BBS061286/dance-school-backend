@@ -10,7 +10,7 @@ import {
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RequestUser } from '../common/types';
 import { BillingService } from './billing.service';
-import { AdminOrdersQuery, CreateOrderDto } from './dto/order.dto';
+import { AdminOrdersQuery, CreateOrderDto, RefundEnrollmentQuery, RefundEventRegistrationQuery, RefundRecordQuery } from './dto/order.dto';
 import { RecordPaymentDto, RefundDto } from './dto/payment.dto';
 
 /**
@@ -107,5 +107,46 @@ export class BillingController {
     @Body() dto: RefundDto,
   ) {
     return this.billingService.createRefundForEnrollment(req.user.id, id, dto);
+  }
+
+  // ---------------------------------------------------------------- 退款中心
+
+  /** 退款中心-课程报名查询：GET /admin/refunds/enrollments?term=&format=&campus=&course=&student= */
+  @Get('admin/refunds/enrollments')
+  @Roles('ADMIN')
+  refundEnrollments(@Query() query: RefundEnrollmentQuery) {
+    return this.billingService.refundEnrollments(query);
+  }
+
+  /** 退款中心-活动报名查询：GET /admin/refunds/event-registrations?event= */
+  @Get('admin/refunds/event-registrations')
+  @Roles('ADMIN')
+  refundEventRegistrations(@Query() query: RefundEventRegistrationQuery) {
+    return this.billingService.refundEventRegistrations(query);
+  }
+
+  /** 退款中心-退款记录：GET /admin/refunds/records?term= */
+  @Get('admin/refunds/records')
+  @Roles('ADMIN')
+  refundRecords(@Query() query: RefundRecordQuery) {
+    return this.billingService.refundRecords(query);
+  }
+
+  /** 活动报名退款预览 */
+  @Get('admin/event-registrations/:id/refund-preview')
+  @Roles('ADMIN')
+  eventRefundPreview(@Param('id') id: string) {
+    return this.billingService.eventRegistrationRefundPreview(id);
+  }
+
+  /** 按活动报名退款 */
+  @Post('admin/event-registrations/:id/refund')
+  @Roles('ADMIN')
+  createEventRefund(
+    @Request() req: { user: RequestUser },
+    @Param('id') id: string,
+    @Body() dto: RefundDto,
+  ) {
+    return this.billingService.createRefundForEventRegistration(req.user.id, id, dto);
   }
 }

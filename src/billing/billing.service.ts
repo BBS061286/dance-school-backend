@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  CourseFormat,
   OrderPaymentMethod,
   OrderStatus,
   Payment,
@@ -665,6 +666,312 @@ export class BillingService {
     return this.prisma.user.findFirst({
       where: { role: 'ADMIN' },
       orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  // ---------------------------------------------------------------- 退款中心
+
+  /**
+   * GET /admin/refunds/enrollments：退款中心-课程报名查询。
+   * 按学期 / 课程类型（大课 GROUP / 大师课 MASTER / 私教课 PRIVATE）/
+   * 校区 / 课程 / 学员姓名过滤，返回报名及缴费汇总（已付/已退/可退）。
+   */
+  async refundEnrollments(query: {
+    term?: string;
+    format?: string;
+    campus?: string;
+    course?: string;
+    student?: string;
+  }) {
+    const format =
+      query.format === 'GROUP' || query.format === 'MASTER' || query.format === 'PRIVATE'
+        ? (query.format as CourseFormat)
+        : undefined;
+    const enrollments = await this.prisma.enrollment.findMany({
+      where: {
+        ...(query.student
+          ? { student: { name: { contains: query.student, mode: 'insensitive' } } }
+          : {}),
+        classSession: {
+          ...(query.campus ? { campusId: query.campus } : {}),
+          ...(query.course ? { courseId: query.course } : {}),
+          course: {
+            ...(query.term ? { termId: query.term } : {}),
+            ...(format ? { format } : {}),
+          },
+        },
+      },
+      include: {
+        student: { select: { id: true, name: true } },
+        classSession: {
+          select: {
+            startTime: true,
+            course: {
+              select: {
+                id: true,
+                title: true,
+                format: true,
+                term: { select: { id: true, name: true } },
+              },
+            },
+            campus: { select: { id: true, name: true } },
+          },
+        },
+      },
+      orderBy: { classSession: { startTime: 'desc' } },
+      take: 200,
+    });
+    const rows: Array<Record<string, unknown>> = [];
+    for (const e of enrollments) {
+      const summary = await this.enrollmentsService.getEnrollmentPaymentSummary(e.id);
+      rows.push({
+        id: e.id,
+        status: e.status,
+        student: e.student,
+        course: e.classSession.course,
+        campus: e.classSession.campus,
+        startTime: e.classSession.startTime,
+        paidCents: summary.paidCents,
+        refundedCents: summary.refundedCents,
+        netCents: summary.netCents,
+      });
+    }
+    return rows;
+  }
+
+  /**
+   * GET /admin/refunds/event-registrations：退款中心-活动/比赛报名查询。
+   * 按活动过滤，返回报名及缴费汇总。
+   */
+  async refundEventRegistrations(query: { event?: string }) {
+    const regs = await this.prisma.eventRegistration.findMany({
+      where: { ...(query.event ? { eventId: query.event } : {}) },
+      include: {
+        student: { select: { id: true, name: true } },
+        event: { select: { id: true, title: true, startTime: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+    const rows: Array<Record<string, unknown>> = [];
+    for (const r of regs) {
+      const summary = await this.getEventRegistrationPaymentSummary(r.id);
+      rows.push({
+        id: r.id,
+        status: r.status,
+        feeStatus: r.feeStatus,
+        ticketQuantity: r.ticketQuantity,
+        participationFeeCents: r.participationFeeCents,
+        ticketTotalCents: r.ticketTotalCents,
+        student: r.student,
+        event: r.event,
+        paidCents: summary.paidCents,
+        refundedCents: summary.refundedCents,
+        netCents: summary.netCents,
+      });
+    }
+    return rows;
+  }
+
+  /**
+   * 活动报名的缴费汇总（经 OrderItem.eventRegistrationId → Order →
+   * Payment/RefundRecord），口径与报名汇总一致：按明细金额占订单比例分摊。
+   */
+  async getEventRegistrationPaymentSummary(registrationId: string) {
+    const items = await this.prisma.orderItem.findMany({
+      where: { eventRegistrationId: registrationId },
+      include: {
+        order: { include: { payments: true } },
+        refunds: true,
+      },
+    });
+    const summary = {
+      paidCents: 0,
+      refundedCents: 0,
+      netCents: 0,
+      items: [] as Array<{
+        orderItemId: string;
+        orderId: string;
+        orderAmountCents: number;
+        shareCents: number;
+        refundedCents: number;
+      }>,
+    };
+    for (const item of items) {
+      const orderPaid = item.order.payments
+        .filter((p) => p.status === 'SUCCEEDED')
+        .reduce((sum, p) => sum + p.amountCents, 0);
+      const shareCents =
+        item.order.amountCents > 0
+          ? Math.round((orderPaid * item.amountCents) / item.order.amountCents)
+          : 0;
+      const refundedCents = item.refunds.reduce((sum, r) => sum + r.amountCents, 0);
+      summary.items.push({
+        orderItemId: item.id,
+        orderId: item.orderId,
+        orderAmountCents: item.order.amountCents,
+        shareCents,
+        refundedCents,
+      });
+      summary.paidCents += shareCents;
+      summary.refundedCents += refundedCents;
+    }
+    summary.netCents = summary.paidCents - summary.refundedCents;
+    return summary;
+  }
+
+  /** 退款预览（按活动报名）：建议金额为可退净额 */
+  async eventRegistrationRefundPreview(registrationId: string) {
+    const reg = await this.prisma.eventRegistration.findUnique({
+      where: { id: registrationId },
+      include: {
+        student: { select: { name: true } },
+        event: { select: { title: true } },
+      },
+    });
+    if (!reg) throw new NotFoundException('活动报名不存在');
+    const summary = await this.getEventRegistrationPaymentSummary(registrationId);
+    return {
+      registrationId,
+      studentName: reg.student?.name ?? null,
+      eventTitle: reg.event?.title ?? null,
+      priceCents: (reg.participationFeeCents ?? 0) + (reg.ticketTotalCents ?? 0),
+      paidCents: summary.paidCents,
+      refundedCents: summary.refundedCents,
+      netCents: summary.netCents,
+      suggestedCents: summary.netCents,
+      formula: 'PAID_AMOUNT' as const,
+    };
+  }
+
+  /**
+   * 按活动报名退款（管理员）。
+   * 流程与按报名退款一致：定位首个有可退余额的订单明细 → 金额校验 →
+   * Stripe 侧先退款（线上支付订单）→ 事务内写 RefundRecord 并派生订单状态 →
+   * 明细全额退回时该活动报名置为已取消。
+   */
+  async createRefundForEventRegistration(
+    adminId: string,
+    registrationId: string,
+    dto: { amount_cents?: number; reason?: string },
+  ) {
+    const reg = await this.prisma.eventRegistration.findUnique({
+      where: { id: registrationId },
+    });
+    if (!reg) throw new NotFoundException('活动报名不存在');
+
+    const summary = await this.getEventRegistrationPaymentSummary(registrationId);
+    if (summary.netCents <= 0) {
+      throw new ConflictException('该报名没有可退金额');
+    }
+    const target = summary.items.find((i) => i.shareCents - i.refundedCents > 0);
+    if (!target) throw new ConflictException('该报名没有可退的订单明细');
+
+    const order = await this.prisma.order.findUnique({
+      where: { id: target.orderId },
+      include: { payments: true, refunds: true },
+    });
+    if (!order) throw new NotFoundException(`订单不存在：${target.orderId}`);
+
+    const orderPaid = order.payments
+      .filter((p) => p.status === 'SUCCEEDED')
+      .reduce((sum, p) => sum + p.amountCents, 0);
+    const orderRefunded = order.refunds.reduce((sum, r) => sum + r.amountCents, 0);
+    const preview = await this.eventRegistrationRefundPreview(registrationId);
+    const amount: number = dto.amount_cents ?? preview.suggestedCents;
+    if (!amount || amount <= 0) {
+      throw new BadRequestException('退款金额必须大于 0');
+    }
+    if (orderRefunded + amount > orderPaid) {
+      throw new BadRequestException('退款金额不能超过已付金额');
+    }
+
+    const hasStripe =
+      order.payments.some(
+        (p) => p.method === 'STRIPE' && p.status === 'SUCCEEDED',
+      ) || order.paymentMethod === 'STRIPE';
+    let stripeRefundId: string | undefined;
+    if (hasStripe) {
+      const { refundId } = await this.paymentsProvider.createRefund({
+        orderId: order.id,
+        amountCents: amount,
+        reason: dto.reason,
+      });
+      stripeRefundId = refundId;
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const record = await tx.refundRecord.create({
+        data: {
+          orderId: order.id,
+          orderItemId: target.orderItemId,
+          amountCents: amount,
+          reason: dto.reason ?? null,
+          refundedById: adminId,
+          stripeRefundId: stripeRefundId ?? null,
+        },
+      });
+      await this.deriveOrder(tx, order.id);
+
+      if (target.refundedCents + amount >= target.shareCents) {
+        // 该明细已全额退回：活动报名置为已取消
+        await tx.eventRegistration.update({
+          where: { id: registrationId },
+          data: { status: 'CANCELLED' },
+        });
+      }
+      return record;
+    });
+  }
+
+  /**
+   * GET /admin/refunds/records：退款记录列表（审计）。
+   * 可选按学期过滤（仅课程报名类退款；活动类退款不归属学期）。
+   */
+  async refundRecords(query: { term?: string }) {
+    return this.prisma.refundRecord.findMany({
+      where: query.term
+        ? {
+            orderItem: {
+              enrollment: { classSession: { course: { termId: query.term } } },
+            },
+          }
+        : {},
+      include: {
+        order: { select: { id: true } },
+        orderItem: {
+          select: {
+            id: true,
+            description: true,
+            enrollment: {
+              select: {
+                id: true,
+                student: { select: { name: true } },
+                classSession: {
+                  select: {
+                    course: {
+                      select: {
+                        title: true,
+                        term: { select: { id: true, name: true } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            eventRegistration: {
+              select: {
+                id: true,
+                student: { select: { name: true } },
+                event: { select: { title: true } },
+              },
+            },
+          },
+        },
+        refundedBy: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
     });
   }
 
