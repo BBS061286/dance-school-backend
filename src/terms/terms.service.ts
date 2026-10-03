@@ -20,6 +20,15 @@ export class TermsService {
     });
   }
 
+  /** GET /terms：仅返回启用中的学期（公开） */
+  async active() {
+    return this.prisma.term.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true, startDate: true, endDate: true },
+      orderBy: { startDate: 'desc' },
+    });
+  }
+
   /** POST /admin/terms：新建学期 */
   async create(dto: CreateTermDto) {
     if (new Date(dto.startDate) > new Date(dto.endDate)) {

@@ -63,12 +63,12 @@ export class CampusesService {
    * GET /admin/campuses/:id/courses：该校区的所有课程。
    * 课程来源 = 课程关联（CourseCampus）∪ 已有班次（ClassSession），按课程聚合：
    * 每门课程含上课时间（周几+时间段）、老师（课程老师+各班次老师去重）、
-   * 各班次报名人数/名额及合计。
+   * 各班次报名人数/名额及合计。可选 term 按学期过滤。
    */
-  async campusCourses(id: string) {
+  async campusCourses(id: string, term?: string) {
     await this.ensureExists(id);
     const sessions = await this.prisma.classSession.findMany({
-      where: { campusId: id },
+      where: { campusId: id, ...(term ? { course: { termId: term } } : {}) },
       include: {
         course: {
           include: {
@@ -80,7 +80,10 @@ export class CampusesService {
       orderBy: { startTime: 'asc' },
     });
     const links = await this.prisma.courseCampus.findMany({
-      where: { campusId: id },
+      where: {
+        campusId: id,
+        ...(term ? { course: { termId: term } } : {}),
+      },
       include: {
         course: {
           include: {

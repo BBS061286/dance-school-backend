@@ -70,6 +70,33 @@ export class EventsService {
     });
   }
 
+  /** 活动列表（公开）：仅可报名（SCHEDULED + requiresRegistration）的未来活动 */
+  async publicListEvents(category?: string) {
+    const rows = await this.prisma.event.findMany({
+      where: {
+        status: 'SCHEDULED',
+        requiresRegistration: true,
+        startTime: { gte: new Date() },
+        ...(category === 'EVENT' || category === 'COMPETITION' ? { category } : {}),
+      },
+      select: {
+        id: true,
+        title: true,
+        category: true,
+        startTime: true,
+        endTime: true,
+        location: true,
+        requiresTicket: true,
+        ticketPriceCents: true,
+        capacity: true,
+        campus: { select: { id: true, name: true } },
+        _count: { select: { registrations: true } },
+      },
+      orderBy: { startTime: 'asc' },
+    });
+    return rows;
+  }
+
   /** 活动详情（公开） */
   async getEvent(eventId: string) {
     const event = await this.prisma.event.findUnique({
@@ -78,6 +105,35 @@ export class EventsService {
     });
     if (!event) throw new NotFoundException(`活动不存在：${eventId}`);
     return event;
+  }
+
+  /** 我的活动报名（家长 / 成人学员） */
+  async myEventRegistrations(userId: string) {
+    const links = await this.prisma.parentStudentLink.findMany({
+      where: { parentId: userId },
+      select: { studentId: true },
+    });
+    const studentIds = links.map((l) => l.studentId);
+    return this.prisma.eventRegistration.findMany({
+      where: {
+        OR: [{ parentId: userId }, { studentId: { in: studentIds } }],
+        status: { not: 'CANCELLED' },
+      },
+      include: {
+        event: {
+          select: {
+            id: true,
+            title: true,
+            category: true,
+            startTime: true,
+            endTime: true,
+            location: true,
+          },
+        },
+        student: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   /**
@@ -458,6 +514,7 @@ export class EventsService {
       select: {
         id: true,
         title: true,
+        category: true,
         startTime: true,
         endTime: true,
         location: true,
@@ -468,6 +525,7 @@ export class EventsService {
     return rows.map((e) => ({
       id: e.id,
       title: e.title,
+      category: e.category,
       startTime: e.startTime,
       endTime: e.endTime,
       venue: e.location,

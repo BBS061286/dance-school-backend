@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
+import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { TermsService } from './terms.service';
 import { CreateTermDto, UpdateTermDto } from './dto/term.dto';
@@ -14,6 +15,14 @@ export class TermsController {
   @Get('admin/terms')
   list() {
     return this.terms.list();
+  }
+
+  /** 公开学期列表（家长端筛选课程用，仅启用中的）：GET /terms */
+  @Public()
+  @Roles()
+  @Get('terms')
+  publicList() {
+    return this.terms.active();
   }
 
   /** 新建学期：POST /admin/terms */

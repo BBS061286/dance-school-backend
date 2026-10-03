@@ -22,4 +22,9 @@ export class BrowseCoursesQuery {
   @IsOptional()
   @IsString()
   campus_id?: string;
+
+  /** 学期 id */
+  @IsOptional()
+  @IsString()
+  term_id?: string;
 }

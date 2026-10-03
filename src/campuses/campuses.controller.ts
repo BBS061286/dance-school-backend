@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { Public } from '../auth/decorators/public.decorator';
@@ -39,10 +40,10 @@ export class CampusesController {
     return this.campuses.create(dto);
   }
 
-  /** 校区课程：GET /admin/campuses/:id/courses（该校区所有课程+时间+老师+人数） */
+  /** 校区课程：GET /admin/campuses/:id/courses（该校区所有课程+时间+老师+人数；可选 ?term=学期id 过滤） */
   @Get('admin/campuses/:id/courses')
-  campusCourses(@Param('id') id: string) {
-    return this.campuses.campusCourses(id);
+  campusCourses(@Param('id') id: string, @Query('term') term?: string) {
+    return this.campuses.campusCourses(id, term || undefined);
   }
 
   /** 校区详情：GET /admin/campuses/:id */

@@ -115,7 +115,8 @@ export class CoursesService {
   /**
    * 公开课程列表（GET /courses）：
    * 仅 status = PUBLISHED（schema 无 isActive 字段，以发布状态为准），
-   * 支持标题模糊 q、format、audience、campus_id 过滤。
+   * 支持标题模糊 q、format、audience、campus_id、term_id 过滤。
+   * 卡片富化信息：学期、上课时间（周几/时段）、老师、剩余名额。
    */
   async browse(query: BrowseCoursesQuery) {
     const courses = await this.prisma.course.findMany({
@@ -127,6 +128,7 @@ export class CoursesService {
         ...(query.campus_id
           ? { campuses: { some: { campusId: query.campus_id } } }
           : {}),
+        ...(query.term_id ? { termId: query.term_id } : {}),
       },
       select: {
         id: true,
@@ -135,21 +137,63 @@ export class CoursesService {
         audience: true,
         skillLevel: true,
         priceCents: true,
+        weekdays: true,
+        timeRange: true,
+        capacity: true,
+        term: { select: { id: true, name: true } },
         campuses: {
           select: { campus: { select: { id: true, name: true } } },
+        },
+        instructors: {
+          select: { instructor: { select: { user: { select: { name: true } } } } },
+        },
+        classSessions: {
+          where: { status: { not: 'CANCELLED' }, startTime: { gte: new Date() } },
+          select: {
+            id: true,
+            capacity: true,
+            enrolledCount: true,
+            instructor: { select: { user: { select: { name: true } } } },
+          },
         },
       },
       orderBy: { createdAt: 'desc' },
     });
-    return courses.map((c) => ({
-      id: c.id,
-      title: c.title,
-      format: c.format,
-      audience: c.audience,
-      level: c.skillLevel,
-      priceCents: c.priceCents,
-      campuses: c.campuses.map((cc) => cc.campus),
-    }));
+    return courses.map((c) => {
+      const teachers = new Set<string>();
+      for (const ci of c.instructors) {
+        const n = ci.instructor?.user?.name;
+        if (n) teachers.add(n);
+      }
+      let totalCapacity = 0;
+      let enrolled = 0;
+      for (const s of c.classSessions) {
+        const n = s.instructor?.user?.name;
+        if (n) teachers.add(n);
+        // 私教课有效名额恒为 1
+        totalCapacity += c.format === 'PRIVATE' ? 1 : (s.capacity ?? c.capacity ?? 0);
+        enrolled += s.enrolledCount;
+      }
+      const weekdays = [...(c.weekdays ?? [])].sort(
+        (a: number, b: number) => a - b,
+      );
+      return {
+        id: c.id,
+        title: c.title,
+        format: c.format,
+        audience: c.audience,
+        level: c.skillLevel,
+        priceCents: c.priceCents,
+        campuses: c.campuses.map((cc) => cc.campus),
+        term: c.term,
+        weekdays,
+        timeRange: c.timeRange,
+        teachers: [...teachers],
+        capacity: totalCapacity,
+        enrolled,
+        seatsLeft: Math.max(totalCapacity - enrolled, 0),
+      };
+    });
   }
 
   /**

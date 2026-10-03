@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Request,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
@@ -56,11 +57,25 @@ export class EventsController {
     return this.events.createEvent(req.user.id, dto);
   }
 
+  /** 活动列表（公开）：GET /events，仅可报名的未来活动；可选 ?category=EVENT|COMPETITION */
+  @Public()
+  @Get('events')
+  publicListEvents(@Query('category') category?: string) {
+    return this.events.publicListEvents(category);
+  }
+
   /** 活动详情（公开） */
   @Public()
   @Get('events/:id')
   getEvent(@Param('id') id: string) {
     return this.events.getEvent(id);
+  }
+
+  /** 我的活动报名（家长 / 成人学员）：GET /me/event-registrations */
+  @Roles(UserRole.PARENT, UserRole.ADULT_STUDENT)
+  @Get('me/event-registrations')
+  myEventRegistrations(@Request() req: { user: RequestUser }) {
+    return this.events.myEventRegistrations(req.user.id);
   }
 
   /** 报名活动/比赛：{ ticket_quantity? }（家长 / 成人学员） */
