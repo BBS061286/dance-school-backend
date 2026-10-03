@@ -32,6 +32,15 @@ export class CampusesService {
     });
   }
 
+  /** GET /campuses：公开校区列表（仅启用中的，供家长端缴费/报名下拉） */
+  async publicList() {
+    return this.prisma.campus.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true, city: true, address: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
   /** GET /admin/campuses/:id：校区详情 */
   async detail(id: string) {
     const campus = await this.prisma.campus.findUnique({

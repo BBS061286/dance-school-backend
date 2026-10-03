@@ -8,6 +8,7 @@ import {
   Post,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
+import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CampusesService } from './campuses.service';
 import { CreateCampusDto, UpdateCampusDto } from './dto/campus.dto';
@@ -17,6 +18,14 @@ import { CreateCampusDto, UpdateCampusDto } from './dto/campus.dto';
 @Roles(UserRole.ADMIN)
 export class CampusesController {
   constructor(private readonly campuses: CampusesService) {}
+
+  /** 公开校区列表（家长端下拉用）：GET /campuses */
+  @Public()
+  @Roles()
+  @Get('campuses')
+  publicList() {
+    return this.campuses.publicList();
+  }
 
   /** 校区列表：GET /admin/campuses */
   @Get('admin/campuses')
