@@ -615,8 +615,9 @@ export class EnrollmentsService {
   }
 
   /**
-   * 事务内转正指定候补：要求 WAITLISTED；非手动模式下曾超时的记录拒绝；
-   * 抢名额失败抛 409。
+   * 事务内转正指定候补：要求 WAITLISTED；非手动模式下曾超时的记录拒绝。
+   * 手动模式（管理员特批）：名额满也可转正（允许超员，计数照常累加）；
+   * 自动模式：抢名额失败抛 409。
    */
   private async promoteInTx(
     tx: TxClient,
@@ -634,7 +635,12 @@ export class EnrollmentsService {
       include: { course: true },
     });
     if (!session) throw new NotFoundException('班级不存在');
-    if (!(await this.claimSeat(tx, session.id, this.effectiveCapacity(session)))) {
+    if (opts.manual) {
+      // 管理员手动特批：名额满也可转正，计数照常累加（可超员，如 13/12）
+      await tx.$executeRaw`UPDATE "ClassSession" SET "enrolledCount" = "enrolledCount" + 1 WHERE id = ${session.id}`;
+    } else if (
+      !(await this.claimSeat(tx, session.id, this.effectiveCapacity(session)))
+    ) {
       throw new ConflictException('班级名额已满');
     }
     return this.finalizePromotion(tx, enrollment, session);
