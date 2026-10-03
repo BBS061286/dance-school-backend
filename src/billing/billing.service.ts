@@ -447,7 +447,13 @@ export class BillingService {
             enrollment: {
               select: {
                 id: true,
-                student: { select: { name: true } },
+                student: {
+                  select: {
+                    name: true,
+                    dob: true,
+                    parentLinks: { select: { relationship: true } },
+                  },
+                },
                 classSession: {
                   select: {
                     id: true,
@@ -458,11 +464,27 @@ export class BillingService {
                       select: {
                         id: true,
                         title: true,
+                        format: true,
                         term: { select: { id: true, name: true } },
                       },
                     },
                     campus: { select: { id: true, name: true } },
                   },
+                },
+              },
+            },
+            eventRegistration: {
+              select: {
+                id: true,
+                student: {
+                  select: {
+                    name: true,
+                    dob: true,
+                    parentLinks: { select: { relationship: true } },
+                  },
+                },
+                event: {
+                  select: { id: true, title: true, category: true },
                 },
               },
             },
@@ -473,7 +495,50 @@ export class BillingService {
       },
       orderBy: { createdAt: 'desc' },
     });
-    return orders.map((o) => ({ ...o, ...this.attachTotals(o) }));
+
+    // 缴费类型判定：报名 → 课程形式（大课/私教/大师课）；活动报名 → 活动/比赛
+    const itemKind = (item: {
+      enrollment?: { classSession?: { course?: { format?: string } | null } | null } | null;
+      eventRegistration?: { event?: { category?: string } | null } | null;
+    }): string => {
+      const format = item.enrollment?.classSession?.course?.format;
+      if (format === 'GROUP' || format === 'PRIVATE' || format === 'MASTER') return format;
+      const category = item.eventRegistration?.event?.category;
+      if (category === 'EVENT' || category === 'COMPETITION') return category;
+      return 'OTHER';
+    };
+    // 学员类型判定：满 18 岁或 SELF 绑定 → 成人，否则小孩
+    const studentTypeOf = (student?: {
+      dob?: Date | string | null;
+      parentLinks?: Array<{ relationship?: string }>;
+    } | null): 'ADULT' | 'YOUTH' => {
+      if (student?.dob) {
+        const dob = new Date(student.dob);
+        const cutoff = new Date();
+        cutoff.setFullYear(cutoff.getFullYear() - 18);
+        if (dob <= cutoff) return 'ADULT';
+      }
+      if (student?.parentLinks?.some((l) => l.relationship === 'SELF')) return 'ADULT';
+      return 'YOUTH';
+    };
+
+    let result = orders.map((o) => {
+      const kinds = [...new Set(o.items.map(itemKind))];
+      const studentTypes: Array<'ADULT' | 'YOUTH'> = [
+        ...new Set(
+          o.items.map((it) =>
+            studentTypeOf(it.enrollment?.student ?? it.eventRegistration?.student),
+          ),
+        ),
+      ];
+      return { ...o, ...this.attachTotals(o), kinds, studentTypes };
+    });
+    if (query.kind) result = result.filter((o) => o.kinds.includes(query.kind as string));
+    if (query.student_type)
+      result = result.filter((o) =>
+        o.studentTypes.includes(query.student_type as 'ADULT' | 'YOUTH'),
+      );
+    return result;
   }
 
   // ---------------------------------------------------------------- 退款

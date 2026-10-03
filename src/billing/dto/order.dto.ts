@@ -2,6 +2,7 @@ import {
   ArrayMinSize,
   IsArray,
   IsEnum,
+  IsIn,
   IsOptional,
   IsString,
   IsUUID,
@@ -49,6 +50,16 @@ export class AdminOrdersQuery {
   @IsOptional()
   @IsString()
   term?: string;
+
+  /** 学员类型：YOUTH 小孩 / ADULT 成人（按订单中所有学员判定，含混合订单） */
+  @IsOptional()
+  @IsIn(['YOUTH', 'ADULT'])
+  student_type?: string;
+
+  /** 缴费类型：GROUP 大课 / PRIVATE 私教课 / MASTER 大师课 / EVENT 活动 / COMPETITION 比赛 */
+  @IsOptional()
+  @IsIn(['GROUP', 'PRIVATE', 'MASTER', 'EVENT', 'COMPETITION'])
+  kind?: string;
 }
 
 /** 退款中心-课程报名查询条件 */
