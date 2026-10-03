@@ -10,6 +10,15 @@ async function bootstrap() {
   // 设计文档 §4：统一前缀 /api/v1
   app.setGlobalPrefix('api/v1');
 
+  // 允许前端域名跨域访问（多域名用逗号分隔配置 CORS_ORIGINS）
+  const corsOrigins = (process.env.CORS_ORIGINS ??
+    'https://web-production-a4d6e.up.railway.app,http://localhost:3000,http://localhost:5173'
+  )
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  app.enableCors({ origin: corsOrigins, credentials: true });
+
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, transform: true }),
   );
