@@ -422,21 +422,23 @@ export class BillingService {
     return orders.map((o) => ({ ...o, ...this.attachTotals(o) }));
   }
 
-  /** 管理员订单列表：可选按状态 / 校区 / 课程过滤；明细带课程信息（课程名、上课时间、地点） */
+  /** 管理员订单列表：可选按状态 / 学期 / 校区 / 课程过滤；明细带课程信息（课程名、学期、上课时间、地点） */
   async adminOrders(query: AdminOrdersQuery) {
-    const itemFilter: Record<string, unknown> = {};
-    if (query.campus || query.course) {
-      itemFilter.enrollment = {
-        classSession: {
-          ...(query.campus ? { campusId: query.campus } : {}),
-          ...(query.course ? { courseId: query.course } : {}),
-        },
+    const classSessionFilter: Record<string, unknown> = {};
+    if (query.campus) classSessionFilter.campusId = query.campus;
+    if (query.course || query.term) {
+      classSessionFilter.course = {
+        ...(query.course ? { id: query.course } : {}),
+        ...(query.term ? { termId: query.term } : {}),
       };
     }
+    const hasItemFilter = query.campus || query.course || query.term;
     const orders = await this.prisma.order.findMany({
       where: {
         ...(query.status ? { status: query.status } : {}),
-        ...(query.campus || query.course ? { items: { some: itemFilter } } : {}),
+        ...(hasItemFilter
+          ? { items: { some: { enrollment: { classSession: classSessionFilter } } } }
+          : {}),
       },
       include: {
         items: {
@@ -451,7 +453,13 @@ export class BillingService {
                     startTime: true,
                     endTime: true,
                     room: true,
-                    course: { select: { id: true, title: true } },
+                    course: {
+                      select: {
+                        id: true,
+                        title: true,
+                        term: { select: { id: true, name: true } },
+                      },
+                    },
                     campus: { select: { id: true, name: true } },
                   },
                 },

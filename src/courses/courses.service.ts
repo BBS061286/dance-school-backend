@@ -54,6 +54,13 @@ export class CoursesService {
       if (!instructor) throw new NotFoundException('教师不存在');
       instructorUserId = instructor.userId;
     }
+    if (dto.term_id) {
+      const term = await this.prisma.term.findUnique({
+        where: { id: dto.term_id },
+        select: { id: true },
+      });
+      if (!term) throw new NotFoundException('学期不存在');
+    }
 
     const course = await this.prisma.$transaction(async (tx) => {
       const created = await tx.course.create({
@@ -78,6 +85,7 @@ export class CoursesService {
           endDate: dto.end_date ? new Date(dto.end_date) : undefined,
           address: dto.address,
           capacity,
+          termId: dto.term_id,
         },
       });
       await tx.courseCampus.create({

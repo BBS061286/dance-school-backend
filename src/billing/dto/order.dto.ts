@@ -44,4 +44,9 @@ export class AdminOrdersQuery {
   @IsOptional()
   @IsString()
   course?: string;
+
+  /** 学期 id：按订单明细中报名的班级所属课程的学期过滤（可查历史学期缴款） */
+  @IsOptional()
+  @IsString()
+  term?: string;
 }

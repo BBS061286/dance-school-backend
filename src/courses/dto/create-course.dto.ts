@@ -57,6 +57,11 @@ export class CreateCourseDto {
   @IsUUID('4', { message: 'campus_id 必须是合法的 UUID' })
   campus_id: string;
 
+  /** 学期 id（可选）：课程归属学期，用于按学期查缴款 */
+  @IsOptional()
+  @IsUUID('4', { message: 'term_id 必须是合法的 UUID' })
+  term_id?: string;
+
   @IsOptional()
   @IsString({ message: 'address 必须是字符串' })
   address?: string;

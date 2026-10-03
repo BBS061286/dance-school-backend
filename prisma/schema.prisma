@@ -405,7 +405,6 @@ model Course {
   danceStyle  String?
   weekdays    Int[]          // 0-6，固定排课星期几
   timeRange   String?        // weekdays 中所有星期几的默认上课时间；课次预览后可逐节覆盖（v2 R8g）
-  term        String?        // YYYY-SPRING / YYYY-FALL
   pricingType PricingType
   requiresPayment Boolean    @default(true)
   priceCents  Int
@@ -427,6 +426,24 @@ model Course {
   classSessions  ClassSession[]
   reviews        CourseReview[]
   extraLessonProducts ExtraLessonRequest[] @relation("SourceCourse")
+  // 学期：课程归属学期（如 2025年秋季），用于按学期查缴款记录
+  termId         String?
+  term           Term?            @relation(fields: [termId], references: [id], onDelete: SetNull)
+}
+
+// ---------------------------- 2.6b Term ------------------------------------
+// 学期（如 2025年秋季 / 2026年春季）：管理员先设定学期，再建课程时关联；
+// 订单按学期筛选，支持查历史学期的缴款记录。
+model Term {
+  id        String   @id @default(uuid())
+  name      String   // 如 2025年秋季
+  startDate DateTime @db.Date
+  endDate   DateTime @db.Date
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  courses   Course[]
 }
 
 // ------------------- 2.7 CourseCampus / 2.8 CourseInstructor -----------------
