@@ -8,6 +8,7 @@ import { AttendanceModule } from './attendance/attendance.module';
 import { BillingModule } from './billing/billing.module';
 import { CampusesModule } from './campuses/campuses.module';
 import { TermsModule } from './terms/terms.module';
+import { SessionsModule } from './sessions/sessions.module';
 import { CoursesModule } from './courses/courses.module';
 import { DocumentsModule } from './documents/documents.module';
 import { EnrollmentsModule } from './enrollments/enrollments.module';
@@ -53,6 +54,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     InstructorsModule, // D5：教师管理
     CampusesModule,
     TermsModule, // 学期管理
+    SessionsModule, // 班次管理：新建班次
   ],
   providers: [
     // 全局守卫：先鉴权（@Public 标记的路由放行），再做角色校验

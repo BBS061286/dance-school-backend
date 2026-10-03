@@ -418,9 +418,16 @@ export class CoursesService {
     }
 
     const teachers = new Set<string>();
+    const instructorList: Array<{ id: string; name: string }> = [];
     for (const ci of course.instructors) {
       const n = ci.instructor?.user?.name;
       if (n) teachers.add(n);
+      if (ci.instructor) {
+        instructorList.push({
+          id: ci.instructor.id,
+          name: ci.instructor.user?.name ?? '—',
+        });
+      }
     }
 
     const sessions = course.classSessions.map((s) => {
@@ -489,6 +496,7 @@ export class CoursesService {
         : null,
       campuses: course.campuses.map((c) => c.campus),
       teachers: [...teachers],
+      instructors: instructorList,
       sessions,
       stats,
     };
