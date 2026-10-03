@@ -597,7 +597,7 @@ export class AttendanceService {
       }
     }
 
-    return this.prisma.instructorCheckin.create({
+    const checkin = await this.prisma.instructorCheckin.create({
       data: {
         instructorId: instructor.id,
         classSessionId: dto.class_session_id ?? null,
@@ -608,6 +608,50 @@ export class AttendanceService {
         time: dto.time,
       },
     });
+
+    // 私教课：授课教师打卡后，若该课程所有班次均已打卡，自动归档
+    if (dto.class_session_id) {
+      await this.autoArchivePrivateCourse(dto.class_session_id);
+    }
+    return checkin;
+  }
+
+  /**
+   * 私教课自动归档：教师为某班次打卡后，若该私教课程（PUBLISHED）
+   * 的所有未取消班次都已有教师打卡记录，则自动置为 ARCHIVED（课已上完）。
+   * 大课/大师课不受影响。
+   */
+  private async autoArchivePrivateCourse(
+    classSessionId: string,
+  ): Promise<void> {
+    const session = await this.prisma.classSession.findUnique({
+      where: { id: classSessionId },
+      select: {
+        course: { select: { id: true, format: true, status: true } },
+      },
+    });
+    const course = session?.course;
+    if (!course || course.format !== 'PRIVATE' || course.status !== 'PUBLISHED') {
+      return;
+    }
+    const sessions = await this.prisma.classSession.findMany({
+      where: { courseId: course.id, status: { not: 'CANCELLED' } },
+      select: { id: true },
+    });
+    if (sessions.length === 0) return;
+    const checked = await this.prisma.instructorCheckin.groupBy({
+      by: ['classSessionId'],
+      where: { classSessionId: { in: sessions.map((s) => s.id) } },
+    });
+    const checkedIds = new Set(
+      checked.map((c) => c.classSessionId).filter((x): x is string => !!x),
+    );
+    if (sessions.every((s) => checkedIds.has(s.id))) {
+      await this.prisma.course.update({
+        where: { id: course.id },
+        data: { status: 'ARCHIVED' },
+      });
+    }
   }
 
   /** 我的教师打卡记录 */
