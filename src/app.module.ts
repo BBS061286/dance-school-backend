@@ -6,6 +6,7 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { AttendanceModule } from './attendance/attendance.module';
 import { BillingModule } from './billing/billing.module';
+import { CampusesModule } from './campuses/campuses.module';
 import { CoursesModule } from './courses/courses.module';
 import { DocumentsModule } from './documents/documents.module';
 import { EnrollmentsModule } from './enrollments/enrollments.module';
@@ -49,6 +50,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     StudentsModule, // D5：学员查询
     CoursesModule, // D5：课程创建
     InstructorsModule, // D5：教师管理
+    CampusesModule, // 校区管理
   ],
   providers: [
     // 全局守卫：先鉴权（@Public 标记的路由放行），再做角色校验
