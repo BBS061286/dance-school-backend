@@ -806,11 +806,23 @@ export class BillingService {
 
   /**
    * GET /admin/refunds/event-registrations：退款中心-活动/比赛报名查询。
-   * 按活动过滤，返回报名及缴费汇总。
+   * 按活动、年份（活动开始时间）过滤，返回报名及缴费汇总。
    */
-  async refundEventRegistrations(query: { event?: string }) {
+  async refundEventRegistrations(query: { event?: string; year?: string }) {
+    const yearNum = query.year ? parseInt(query.year, 10) : NaN;
+    const yearFilter =
+      Number.isFinite(yearNum) && yearNum >= 2000 && yearNum <= 2100
+        ? {
+            event: {
+              startTime: {
+                gte: new Date(`${yearNum}-01-01T00:00:00Z`),
+                lt: new Date(`${yearNum + 1}-01-01T00:00:00Z`),
+              },
+            },
+          }
+        : {};
     const regs = await this.prisma.eventRegistration.findMany({
-      where: { ...(query.event ? { eventId: query.event } : {}) },
+      where: { ...(query.event ? { eventId: query.event } : {}), ...yearFilter },
       include: {
         student: { select: { id: true, name: true } },
         event: { select: { id: true, title: true, startTime: true } },

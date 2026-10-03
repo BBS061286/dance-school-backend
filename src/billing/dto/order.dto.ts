@@ -96,6 +96,11 @@ export class RefundEventRegistrationQuery {
   @IsOptional()
   @IsString()
   event?: string;
+
+  /** 年份，如 2025 / 2026：按活动开始时间过滤 */
+  @IsOptional()
+  @IsString()
+  year?: string;
 }
 
 /** 退款记录查询条件 */
