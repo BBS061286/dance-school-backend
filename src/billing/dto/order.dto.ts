@@ -39,4 +39,9 @@ export class AdminOrdersQuery {
   @IsOptional()
   @IsString()
   campus?: string;
+
+  /** 课程 id：按订单明细中报名的班级所属课程过滤 */
+  @IsOptional()
+  @IsString()
+  course?: string;
 }
