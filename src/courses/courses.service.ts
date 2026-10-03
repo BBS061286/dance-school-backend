@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import {
   CourseFormat,
+  CourseStatus,
   NotificationSourceType,
   NotificationType,
   PricingType,
@@ -87,6 +88,7 @@ export class CoursesService {
           address: dto.address,
           capacity,
           termId: dto.term_id,
+          status: dto.status ?? 'DRAFT',
         },
       });
       await tx.courseCampus.create({
@@ -318,6 +320,23 @@ export class CoursesService {
           : null,
       })),
     };
+  }
+
+  /**
+   * 课程状态变更：PATCH /admin/courses/:id/status（ADMIN）。
+   * 草稿↔发布↔归档，用于新建后的发布、学期结束归档等。
+   */
+  async updateStatus(id: string, status: CourseStatus) {
+    const course = await this.prisma.course.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!course) throw new NotFoundException('课程不存在');
+    return this.prisma.course.update({
+      where: { id },
+      data: { status },
+      select: { id: true, status: true },
+    });
   }
 
   /**

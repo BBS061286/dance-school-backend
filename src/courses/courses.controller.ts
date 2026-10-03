@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -6,6 +6,7 @@ import { CoursesService } from './courses.service';
 import { BrowseCoursesQuery } from './dto/browse-courses.dto';
 import { AdminCoursesQuery } from './dto/admin-courses.dto';
 import { CreateCourseDto } from './dto/create-course.dto';
+import { UpdateCourseStatusDto } from './dto/update-course-status.dto';
 
 /** 课程管理路由（§6.27）。全局前缀 /api/v1 在 main.ts 设置。 */
 @Controller()
@@ -38,6 +39,13 @@ export class CoursesController {
   @Get('admin/courses/:id/detail')
   adminDetail(@Param('id') id: string) {
     return this.courses.adminDetail(id);
+  }
+
+  /** 课程状态变更：PATCH /admin/courses/:id/status（ADMIN），草稿↔发布↔归档 */
+  @Roles(UserRole.ADMIN)
+  @Patch('admin/courses/:id/status')
+  updateStatus(@Param('id') id: string, @Body() dto: UpdateCourseStatusDto) {
+    return this.courses.updateStatus(id, dto.status);
   }
 
   /** 新增课程：POST /admin/courses（ADMIN） */

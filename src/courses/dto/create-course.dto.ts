@@ -14,6 +14,7 @@ import {
 import {
   CourseAudience,
   CourseFormat,
+  CourseStatus,
   PricingType,
   SkillLevel,
 } from '@prisma/client';
@@ -25,6 +26,11 @@ export class CreateCourseDto {
 
   @IsEnum(CourseAudience, { message: 'audience 必须是 YOUTH/ADULT/ALL' })
   audience: CourseAudience;
+
+  /** 新建时的状态：DRAFT（默认）/ PUBLISHED；不传则为草稿 */
+  @IsOptional()
+  @IsEnum(CourseStatus, { message: 'status 必须是 DRAFT/PUBLISHED/ARCHIVED' })
+  status?: CourseStatus;
 
   @IsString({ message: 'title 必须是字符串' })
   title: string;
