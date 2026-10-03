@@ -374,6 +374,7 @@ model Campus {
   name      String
   address   String?
   city      String?
+  zipCode   String?  // 邮编
   phone     String?
   // v2 R7：IANA 时区名，提醒触发时刻以此为基准计算（第五章）
   timezone  String   @default("America/New_York")

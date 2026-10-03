@@ -39,6 +39,12 @@ export class CampusesController {
     return this.campuses.create(dto);
   }
 
+  /** 校区课程：GET /admin/campuses/:id/courses（该校区所有课程+时间+老师+人数） */
+  @Get('admin/campuses/:id/courses')
+  campusCourses(@Param('id') id: string) {
+    return this.campuses.campusCourses(id);
+  }
+
   /** 校区详情：GET /admin/campuses/:id */
   @Get('admin/campuses/:id')
   detail(@Param('id') id: string) {

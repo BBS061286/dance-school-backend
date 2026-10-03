@@ -21,6 +21,11 @@ export class CreateCampusDto {
   @MaxLength(50, { message: '电话过长' })
   phone?: string;
 
+  @IsOptional()
+  @IsString({ message: '邮编必须是字符串' })
+  @MaxLength(20, { message: '邮编过长' })
+  zipCode?: string;
+
   /** IANA 时区名，如 America/New_York（v2 R7） */
   @IsOptional()
   @IsString({ message: '时区必须是 IANA 时区名' })
@@ -49,6 +54,11 @@ export class UpdateCampusDto {
   @IsString({ message: '电话必须是字符串' })
   @MaxLength(50, { message: '电话过长' })
   phone?: string;
+
+  @IsOptional()
+  @IsString({ message: '邮编必须是字符串' })
+  @MaxLength(20, { message: '邮编过长' })
+  zipCode?: string;
 
   @IsOptional()
   @IsString({ message: '时区必须是 IANA 时区名' })
