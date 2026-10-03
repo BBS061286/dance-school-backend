@@ -569,9 +569,8 @@ export class EnrollmentsService {
 
   // ------------------------------------------------------------------ 私有辅助
 
-  /** 有效名额：PRIVATE 课程强制为 1，否则课次容量为空时继承课程容量 */
+  /** 有效名额：课次容量为空时继承课程容量（私教课 1v1/1v3 等按设定名额） */
   private effectiveCapacity(session: SessionWithCourse): number {
-    if (session.course.format === 'PRIVATE') return 1;
     return session.capacity ?? session.course.capacity;
   }
 

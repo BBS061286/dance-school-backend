@@ -32,7 +32,10 @@ export class CoursesService {
   async create(dto: CreateCourseDto) {
     let capacity = dto.capacity;
     if (dto.format === CourseFormat.PRIVATE) {
-      capacity = 1; // PRIVATE 强制 capacity=1
+      // 私教课名额不再强制为 1：支持 1v1 / 1v3 等小班私教（1-8 人）
+      if (capacity < 1 || capacity > 8) {
+        throw new BadRequestException('私教课名额为 1-8 人');
+      }
       if (
         dto.pricing_type !== PricingType.PER_SESSION &&
         dto.pricing_type !== PricingType.PACKAGE
@@ -173,8 +176,7 @@ export class CoursesService {
       for (const s of c.classSessions) {
         const n = s.instructor?.user?.name;
         if (n) teachers.add(n);
-        // 私教课有效名额恒为 1
-        totalCapacity += c.format === 'PRIVATE' ? 1 : (s.capacity ?? c.capacity ?? 0);
+        totalCapacity += s.capacity ?? c.capacity ?? 0;
         enrolled += s.enrolledCount;
       }
       const weekdays = [...(c.weekdays ?? [])].sort(
@@ -226,6 +228,7 @@ export class CoursesService {
         status: true,
         weekdays: true,
         timeRange: true,
+        capacity: true,
         term: { select: { id: true, name: true } },
         campuses: {
           select: { campus: { select: { id: true, name: true } } },
@@ -254,7 +257,7 @@ export class CoursesService {
       let totalCapacity = 0;
       let enrolled = 0;
       for (const s of c.classSessions) {
-        totalCapacity += c.format === 'PRIVATE' ? 1 : (s.capacity ?? 0);
+        totalCapacity += s.capacity ?? c.capacity ?? 0;
         enrolled += s.enrolledCount;
       }
       return {
