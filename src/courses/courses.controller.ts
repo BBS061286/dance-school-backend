@@ -4,6 +4,7 @@ import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CoursesService } from './courses.service';
 import { BrowseCoursesQuery } from './dto/browse-courses.dto';
+import { AdminCoursesQuery } from './dto/admin-courses.dto';
 import { CreateCourseDto } from './dto/create-course.dto';
 
 /** 课程管理路由（§6.27）。全局前缀 /api/v1 在 main.ts 设置。 */
@@ -23,6 +24,13 @@ export class CoursesController {
   @Get('courses/:id')
   detail(@Param('id') id: string) {
     return this.courses.detail(id);
+  }
+
+  /** 管理端课程列表：GET /admin/courses（ADMIN），支持 q/term/status/format/audience 筛选 */
+  @Roles(UserRole.ADMIN)
+  @Get('admin/courses')
+  adminList(@Query() query: AdminCoursesQuery) {
+    return this.courses.adminList(query);
   }
 
   /** 新增课程：POST /admin/courses（ADMIN） */

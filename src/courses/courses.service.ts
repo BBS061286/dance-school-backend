@@ -12,6 +12,7 @@ import {
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { BrowseCoursesQuery } from './dto/browse-courses.dto';
+import { AdminCoursesQuery } from './dto/admin-courses.dto';
 import { CreateCourseDto } from './dto/create-course.dto';
 
 /**
@@ -192,6 +193,81 @@ export class CoursesService {
         capacity: totalCapacity,
         enrolled,
         seatsLeft: Math.max(totalCapacity - enrolled, 0),
+      };
+    });
+  }
+
+  /**
+   * 管理端课程列表（GET /admin/courses）：
+   * 全量课程（含 DRAFT/ARCHIVED），支持 q/term/status/format/audience 筛选，
+   * 每门课程聚合报名人数/名额/班次数。
+   */
+  async adminList(query: AdminCoursesQuery) {
+    const courses = await this.prisma.course.findMany({
+      where: {
+        ...(query.q ? { title: { contains: query.q, mode: 'insensitive' } } : {}),
+        ...(query.term ? { termId: query.term } : {}),
+        ...(query.status ? { status: query.status } : {}),
+        ...(query.format ? { format: query.format } : {}),
+        ...(query.audience ? { audience: query.audience } : {}),
+      },
+      select: {
+        id: true,
+        title: true,
+        format: true,
+        audience: true,
+        skillLevel: true,
+        priceCents: true,
+        status: true,
+        weekdays: true,
+        timeRange: true,
+        term: { select: { id: true, name: true } },
+        campuses: {
+          select: { campus: { select: { id: true, name: true } } },
+        },
+        instructors: {
+          select: { instructor: { select: { user: { select: { name: true } } } } },
+        },
+        classSessions: {
+          select: {
+            id: true,
+            startTime: true,
+            capacity: true,
+            enrolledCount: true,
+            status: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return courses.map((c) => {
+      const teachers = new Set<string>();
+      for (const ci of c.instructors) {
+        const n = ci.instructor?.user?.name;
+        if (n) teachers.add(n);
+      }
+      let totalCapacity = 0;
+      let enrolled = 0;
+      for (const s of c.classSessions) {
+        totalCapacity += c.format === 'PRIVATE' ? 1 : (s.capacity ?? 0);
+        enrolled += s.enrolledCount;
+      }
+      return {
+        id: c.id,
+        title: c.title,
+        format: c.format,
+        audience: c.audience,
+        level: c.skillLevel,
+        priceCents: c.priceCents,
+        status: c.status,
+        term: c.term,
+        campuses: c.campuses.map((cc) => cc.campus),
+        teachers: [...teachers],
+        weekdays: [...(c.weekdays ?? [])].sort((a: number, b: number) => a - b),
+        timeRange: c.timeRange,
+        sessionCount: c.classSessions.length,
+        enrolled,
+        capacity: totalCapacity,
       };
     });
   }
