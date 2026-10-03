@@ -4,8 +4,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Enrollment, Prisma } from '@prisma/client';
+import { Enrollment, NotificationSourceType, NotificationType, Prisma } from '@prisma/client';
 import { RequestUser, TxClient } from '../common/types';
+import { resolveStudentRecipientUserIds } from '../common/student-recipients';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateEnrollmentDto } from './dto/enroll.dto';
 
@@ -47,7 +49,10 @@ export class EnrollmentsService {
   /** 支付有效期：转正或报名后 24 小时内需完成支付 */
   private static readonly PAYMENT_TTL_MS = 24 * 60 * 60 * 1000;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   // ------------------------------------------------------------------ 报名
 
@@ -575,7 +580,7 @@ export class EnrollmentsService {
   /**
    * 取首位有效候补（跳过 promotionTimedOut）并转正；
    * 无候选或抢名额失败返回 null。
-   *（WAITLIST_PROMOTED 通知是 D4 通知模块范围，此处仅转正不发送）
+   *（D5 已接线：转正落定后在 finalizePromotion 内发送 WAITLIST_PROMOTED 通知）
    */
   private async promoteNext(
     tx: TxClient,
@@ -627,7 +632,7 @@ export class EnrollmentsService {
     return this.finalizePromotion(tx, enrollment, session);
   }
 
-  /** 执行转正写库：状态切换 + 支付截止 + 候补前移 */
+  /** 执行转正写库：状态切换 + 支付截止 + 候补前移 + WAITLIST_PROMOTED 通知（§6.28） */
   private async finalizePromotion(
     tx: TxClient,
     enrollment: Enrollment,
@@ -650,7 +655,42 @@ export class EnrollmentsService {
     if (oldPos != null) {
       await this.shiftWaitlistDown(tx, session.id, oldPos);
     }
+    await this.notifyPromotion(tx, promoted, session);
     return promoted;
+  }
+
+  /**
+   * 候补转正通知（§6.28 WAITLIST_PROMOTED，sourceType=ENROLLMENT）：
+   * requires_payment=true → 文案含支付链接与 24 小时支付截止；
+   * requires_payment=false → 文案为"已为你保留名额"。
+   * 收件人：学员家长经 ParentStudentLink（isPrimaryContact 优先）；成人学员本人即 User。
+   */
+  private async notifyPromotion(
+    tx: TxClient,
+    enrollment: Enrollment,
+    session: SessionWithCourse,
+  ): Promise<void> {
+    const needsPay = session.course.requiresPayment;
+    const recipientIds = await resolveStudentRecipientUserIds(
+      tx,
+      enrollment.studentId,
+    );
+    if (recipientIds.length === 0) return;
+    const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
+    const title = '候补转正通知';
+    const body = needsPay
+      ? `《${session.course.title}》已有空余名额，你的候补已转正！请在 24 小时内完成支付，逾期名额将自动释放。支付入口：${frontendUrl}/me/enrollments`
+      : `《${session.course.title}》已为你保留名额，候补转正成功，无需支付，请准时上课。`;
+    for (const userId of recipientIds) {
+      await this.notifications.notify({
+        userId,
+        type: NotificationType.WAITLIST_PROMOTED,
+        title,
+        body,
+        sourceType: NotificationSourceType.ENROLLMENT,
+        sourceId: enrollment.id,
+      });
+    }
   }
 
   /**

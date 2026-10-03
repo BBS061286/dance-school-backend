@@ -101,8 +101,72 @@ export class BillingService {
 
     if (next === 'PAID' && !wasPaid) {
       await this.enrollmentsService.confirmEnrollmentsForPaidOrder(tx, orderId);
+      // D4（§6.8 私教课产品联动）：订单含 format=PRIVATE 的 Course 的报名时，
+      // 自动创建 ExtraLessonRequest（initiatedBy=COURSE_PURCHASE，
+      // sourceCourseId/sourceEnrollmentId 回填，type 按课程 capacity 是否为 1
+      // 判定 ONE_ON_ONE / TEMP_GROUP）。内联 prisma 调用，不 import
+      // extra-lessons 模块以避免循环依赖；已存在时幂等跳过。
+      await this.createExtraLessonRequestsForPrivateCourses(tx, orderId);
     }
     return { status: next };
+  }
+
+  /**
+   * 私教课产品购买联动（§6.8）：订单变 PAID 时，为其中 format=PRIVATE
+   * 课程的每个报名自动生成一条待选时段的 ExtraLessonRequest。
+   * 内联实现，不依赖 extra-lessons 模块（避免循环依赖）。
+   */
+  private async createExtraLessonRequestsForPrivateCourses(
+    tx: TxClient,
+    orderId: string,
+  ): Promise<void> {
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      include: {
+        items: {
+          include: {
+            enrollment: {
+              include: {
+                classSession: { include: { course: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!order) return;
+
+    for (const item of order.items) {
+      const enrollment = item.enrollment;
+      const course = enrollment?.classSession?.course;
+      if (!enrollment || !course || course.format !== 'PRIVATE') continue;
+
+      // 幂等：同一报名已生成过 COURSE_PURCHASE 申请则跳过
+      const existing = await tx.extraLessonRequest.findFirst({
+        where: {
+          sourceEnrollmentId: enrollment.id,
+          initiatedBy: 'COURSE_PURCHASE',
+        },
+      });
+      if (existing) continue;
+
+      // audience 由 student 经 SELF 关系派生（§6.8）：有 SELF 绑定 → ADULT，否则 YOUTH
+      const selfLink = await tx.parentStudentLink.findFirst({
+        where: { studentId: enrollment.studentId, relationship: 'SELF' },
+      });
+
+      await tx.extraLessonRequest.create({
+        data: {
+          type: course.capacity === 1 ? 'ONE_ON_ONE' : 'TEMP_GROUP',
+          studentId: enrollment.studentId,
+          audience: selfLink ? 'ADULT' : 'YOUTH',
+          initiatedBy: 'COURSE_PURCHASE',
+          sourceCourseId: course.id,
+          sourceEnrollmentId: enrollment.id,
+          createdById: order.parentId,
+        },
+      });
+    }
   }
 
   // ---------------------------------------------------------------- 下单

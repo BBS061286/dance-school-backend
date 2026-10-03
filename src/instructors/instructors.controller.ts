@@ -1,0 +1,39 @@
+import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
+import { Roles } from '../auth/decorators/roles.decorator';
+import {
+  AssignInstructorDto,
+  UpdateInstructorDto,
+} from './dto/instructor.dto';
+import { InstructorsService } from './instructors.service';
+
+/** 教师管理路由（§6.25，ADMIN）。全局前缀 /api/v1 在 main.ts 设置。 */
+@Controller()
+@Roles(UserRole.ADMIN)
+export class InstructorsController {
+  constructor(private readonly instructors: InstructorsService) {}
+
+  /** 教师列表：GET /admin/instructors */
+  @Get('admin/instructors')
+  list() {
+    return this.instructors.list();
+  }
+
+  /** 教师详情：GET /admin/instructors/:id */
+  @Get('admin/instructors/:id')
+  detail(@Param('id') id: string) {
+    return this.instructors.detail(id);
+  }
+
+  /** 编辑教师资料：PATCH /admin/instructors/:id */
+  @Patch('admin/instructors/:id')
+  update(@Param('id') id: string, @Body() dto: UpdateInstructorDto) {
+    return this.instructors.update(id, dto);
+  }
+
+  /** 分配教师到班级：POST /admin/course-sessions/:id/assign-instructor */
+  @Post('admin/course-sessions/:id/assign-instructor')
+  assignInstructor(@Param('id') id: string, @Body() dto: AssignInstructorDto) {
+    return this.instructors.assignInstructor(id, dto);
+  }
+}

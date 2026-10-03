@@ -146,3 +146,66 @@ curl -X POST http://localhost:3000/api/v1/auth/login \
 - `Payment.paidAt` 保持必填。
 - `Enrollment` 不加 `(classSessionId, studentId)` 唯一约束，防重由代码层保证。
 - `Gender` 保持 `MALE / FEMALE / OTHER` 三值。
+
+## D3 交付物（提醒 worker）
+
+### 新增端点表（管理端，ADMIN）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/v1/admin/reminder-rules` | 提醒规则列表 |
+| POST | `/api/v1/admin/reminder-rules` | 新建规则（targetType/session 或 event、offsetHoursBefore、channels、templateKey） |
+| PATCH | `/api/v1/admin/reminder-rules/:id` | 修改规则（含启用/停用） |
+| GET | `/api/v1/admin/reminder-logs?target_id=` | 发送记录查询 |
+
+### Worker（BullMQ + Redis）
+
+独立入口 `src/worker.ts`，三个定时任务（§五）：
+
+| 任务 | 频率 | 说明 |
+|---|---|---|
+| `reminder-scan` | 每 5 分钟 | 扫描未来窗口内 SCHEDULED 的课次/活动，按 ReminderRule.offsetHoursBefore 判断触发窗口；收件人=已确认学员的主要联系人家長（含补课学员、排除请假）；ReminderLog 唯一约束去重；按 channels 经 stub（Twilio/SendGrid/FCM）分发，失败指数退避最多 3 次；结果写回 ReminderLog.status；同时写 CLASS_REMINDER/EVENT_REMINDER 通知 |
+| `payment-timeout-scan` | 每 10 分钟 | PENDING_PAYMENT 且 paymentExpiresAt 过期（有 PENDING_CONFIRM 流水的豁免）；未转正过→取消+释放+自动转正；转正过的→回退候补 |
+| `seat-reconcile` | 每天凌晨 3 点 | 重算各 ClassSession.enrolledCount（CONFIRMED+PENDING_PAYMENT），不一致则行锁修正并告警 |
+
+时区：全部 UTC 存储，按 Campus.timezone / Event.timezone 用 luxon + IANA 库换算触发时刻，禁止固定偏移。
+
+### 运行与部署
+
+```bash
+npm run worker        # 开发：ts-node src/worker.ts
+npm run worker:prod   # 生产：node dist/worker.js（先 npm run build）
+```
+
+需要环境变量 `REDIS_URL`（worker 与 API 共用）。Railway 部署二选一：
+1. **同一项目加第二个服务**：同一仓库再建一个服务，启动命令填 `npm run worker:prod`，共用 DATABASE_URL，另加 REDIS_URL（可用 Railway 的 Redis 插件）。
+2. **独立 cron 服务**：把 worker 跑在任意能连 Redis/Postgres 的机器上，`npm run build && npm run worker:prod`。
+
+注意：bullmq v6 运行时依赖 `ioredis`（peer dep），已加入 dependencies。
+
+## D4 交付物（打卡 / 补课 / 加课 / 活动）
+
+| 模块 | 端点 |
+|---|---|
+| 打卡 | `GET /courses/:id/sessions/:sessionId/occurrences`；`POST /occurrences/:id/check-in`（学员自助→待确认）；`POST /admin/occurrences/:id/check-in`（代打卡→已确认）；`POST /admin/attendance/:id/confirm`；`POST /me/instructor/checkins` + `GET /me/instructor/checkins`（教师打卡，INSTRUCTOR） |
+| 课次管理 | `POST /admin/occurrences/:id/cancel-and-postpone`（取消并按 weekdays 顺延，通知学员+教师）；`POST /admin/occurrences/:id/cancel` |
+| 补课 | `GET/POST /admin/class-sessions/:id/makeup-eligibility`；`GET /me/enrollments/:id/makeup-options`；`POST /makeup-bookings`（补课场次打卡后自动记 isMakeup 并完成预约） |
+| 加课 | `POST /extra-lesson-requests`（学员发起）；`POST /admin/extra-lesson-requests`（管理员邀请，student_id 必填）；`GET /me/extra-lesson-requests`；`GET /admin/extra-lesson-requests`；时段审批 `POST /admin/extra-lesson-slots/:id/approve\|propose-alt\|reschedule\|cancel`；学员 `POST /extra-lesson-slots/:id/accept\|decline`；`GET /admin/extra-lesson-slots`；`POST /admin/extra-lesson-slots/:id/review` |
+| 活动 | `POST /admin/events`；`GET /events/:id`（公开）；`POST /events/:id/register`（购票建 TICKET 订单）；`PATCH /event-registrations/:id/cancel`；`POST /admin/event-registrations/:id/issue-fee`；`POST /event-registrations/:id/pay`；`POST /admin/notices` + `GET /me/notices` |
+| 用户 | `PATCH /me`（§6.10：name/dob 或 age/preferredCampusIds；age 反算 dob 写入 SELF 绑定 Student） |
+
+实现说明：打卡用 `@@unique([sessionOccurrenceId,enrollmentId])` 防重，自助打卡后教师/管理员打卡转为已确认；私教课报名支付成功后自动生成 ExtraLessonRequest（initiatedBy=COURSE_PURCHASE）；加课状态变更按 §6.9 映射表发 EXTRA_LESSON_UPDATE 通知。
+
+## D5 交付物（评价 / 私信 / 文件 / 通知 / 教师端）
+
+| 模块 | 端点 |
+|---|---|
+| 通知中心 | `GET /me/notifications`；`GET /me/notifications/unread-count`；`POST /me/notifications/:id/read`；`POST /admin/orders/:id/remind`（催缴，PAYMENT_REMINDER） |
+| 评价 | `POST /admin/courses/:id/reviews`；`GET /courses/:id/reviews`；`POST /admin/students/:id/reviews`；`GET /me/students/:id/reviews`；教师端同款 `POST /me/instructor/courses/:id/reviews`、`POST /me/instructor/students/:id/reviews` |
+| 教师端 | `GET/PATCH /me/instructor/profile`；`GET /me/instructor/classes`；`GET /me/instructor/extra-lessons`；`POST /me/instructor/occurrences/:id/check-in`（点名，非自己班级 403）；`GET /me/instructor/occurrences/:id/attendance`；`GET /me/instructor/notifications` |
+| 私信 | `POST/GET /me/messages`（与管理端唯一 thread）；`GET /admin/messages/threads`；`POST /admin/messages/threads/:id/reply`（发 MESSAGE_REPLY 通知） |
+| 文件签署 | `POST /admin/documents`；`POST /admin/documents/:id/new-version`（重签发 DOCUMENT_SIGN_REQUEST）；`GET /admin/documents`；`GET /admin/documents/:id/signatures`；`GET /me/documents`；`POST /me/documents/:id/sign`；`GET /me/documents/:id/signature` |
+| 学员/课程/教师管理 | `GET /admin/students`；`GET /admin/students/:id/detail`；`POST /admin/courses`（PRIVATE 强制 capacity=1）；`GET/PATCH /admin/instructors`；`POST /admin/course-sessions/:id/assign-instructor`（发 INSTRUCTOR_ASSIGNMENT 通知） |
+| 上传 | `POST /me/students/:id/photo`；`POST /me/avatar`（multipart，本地 `./uploads` stub，生产需对象存储） |
+
+通知接线：候补转正发 WAITLIST_PROMOTED（D2 预留已接上）；课程分配/私信回复/文件重签/评价发布/催缴各自触发对应类型。三个开放问题（Payment.paidAt 必填、无复合唯一约束、Gender 三值）保持 v2 原样未动。

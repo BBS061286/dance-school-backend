@@ -4,3 +4,4 @@ dist/
 *.log
 .DS_Store
 manual-sql/
+uploads/ # D5 本地上传 stub（dev）；生产用对象存储

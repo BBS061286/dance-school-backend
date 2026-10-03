@@ -1,13 +1,72 @@
-import { Controller, Get, Request } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Patch, Request } from '@nestjs/common';
+import { RequestUser } from '../common/types';
+import { PrismaService } from '../prisma/prisma.service';
+import { UpdateMeDto } from './dto/update-me.dto';
 import { UsersService } from './users.service';
 
 @Controller()
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   /** 当前用户信息（设计文档 §4.3） */
   @Get('me')
   me(@Request() req: { user: { id: string } }) {
     return this.usersService.getMe(req.user.id);
+  }
+
+  /**
+   * 编辑自己资料（设计文档 §6.10）：
+   * - name / preferredCampusIds 直接写 User
+   * - 年龄双写入口：传 dob（推荐）或 age；传 age 时由服务端按"今天减去 age 年"
+   *   反算 dob，统一写入 SELF 绑定的 Student.dob（年龄的唯一事实来源）；
+   *   GET /me 的 age 派生计算不动。
+   */
+  @Patch('me')
+  async updateMe(
+    @Request() req: { user: RequestUser },
+    @Body() dto: UpdateMeDto,
+  ) {
+    const userData: { name?: string; preferredCampusIds?: string[] } = {};
+    if (dto.name !== undefined) userData.name = dto.name;
+    if (dto.preferred_campus_ids !== undefined) {
+      userData.preferredCampusIds = dto.preferred_campus_ids;
+    }
+    if (Object.keys(userData).length > 0) {
+      await this.prisma.user.update({
+        where: { id: req.user.id },
+        data: userData,
+      });
+    }
+
+    if (dto.dob !== undefined || dto.age !== undefined) {
+      const link = await this.prisma.parentStudentLink.findFirst({
+        where: { parentId: req.user.id, relationship: 'SELF' },
+      });
+      if (!link) {
+        throw new BadRequestException('只有成人学员（有 SELF 绑定）可以更新年龄');
+      }
+      const dob =
+        dto.dob !== undefined ? new Date(dto.dob) : this.dobFromAge(dto.age!);
+      if (Number.isNaN(dob.getTime())) {
+        throw new BadRequestException('出生日期格式非法');
+      }
+      await this.prisma.student.update({
+        where: { id: link.studentId },
+        data: { dob },
+      });
+    }
+
+    return this.usersService.getMe(req.user.id);
+  }
+
+  /** 由周岁反算出生日期：今天减去 age 年（§6.10） */
+  private dobFromAge(age: number): Date {
+    const now = new Date();
+    return new Date(
+      Date.UTC(now.getUTCFullYear() - age, now.getUTCMonth(), now.getUTCDate()),
+    );
   }
 }
