@@ -11,6 +11,7 @@ import {
 } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { BrowseCoursesQuery } from './dto/browse-courses.dto';
 import { CreateCourseDto } from './dto/create-course.dto';
 
 /**
@@ -101,5 +102,90 @@ export class CoursesService {
       });
     }
     return course;
+  }
+
+  /**
+   * 公开课程列表（GET /courses）：
+   * 仅 status = PUBLISHED（schema 无 isActive 字段，以发布状态为准），
+   * 支持标题模糊 q、format、audience、campus_id 过滤。
+   */
+  async browse(query: BrowseCoursesQuery) {
+    const courses = await this.prisma.course.findMany({
+      where: {
+        status: 'PUBLISHED',
+        ...(query.q ? { title: { contains: query.q, mode: 'insensitive' } } : {}),
+        ...(query.format ? { format: query.format } : {}),
+        ...(query.audience ? { audience: query.audience } : {}),
+        ...(query.campus_id
+          ? { campuses: { some: { campusId: query.campus_id } } }
+          : {}),
+      },
+      select: {
+        id: true,
+        title: true,
+        format: true,
+        audience: true,
+        skillLevel: true,
+        priceCents: true,
+        campuses: {
+          select: { campus: { select: { id: true, name: true } } },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return courses.map((c) => ({
+      id: c.id,
+      title: c.title,
+      format: c.format,
+      audience: c.audience,
+      level: c.skillLevel,
+      priceCents: c.priceCents,
+      campuses: c.campuses.map((cc) => cc.campus),
+    }));
+  }
+
+  /**
+   * 公开课程详情 + 未来场次（GET /courses/:id）：
+   * classSessions 取 startTime >= now 且未取消的，按 startTime 升序。
+   */
+  async detail(id: string) {
+    const course = await this.prisma.course.findUnique({
+      where: { id },
+      include: {
+        campuses: {
+          select: { campus: { select: { id: true, name: true } } },
+        },
+        classSessions: {
+          where: {
+            startTime: { gte: new Date() },
+            status: { not: 'CANCELLED' },
+          },
+          orderBy: { startTime: 'asc' },
+          include: {
+            campus: { select: { id: true, name: true } },
+            instructor: {
+              include: { user: { select: { name: true } } },
+            },
+          },
+        },
+      },
+    });
+    if (!course) throw new NotFoundException('课程不存在');
+    const { campuses, classSessions, ...rest } = course;
+    return {
+      ...rest,
+      campuses: campuses.map((cc) => cc.campus),
+      classSessions: classSessions.map((s) => ({
+        id: s.id,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        capacity: s.capacity,
+        enrolledCount: s.enrolledCount,
+        campus: s.campus,
+        instructor: s.instructor
+          ? { id: s.instructor.id, name: s.instructor.user.name }
+          : null,
+      })),
+    };
   }
 }

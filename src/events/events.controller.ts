@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Param,
   Patch,
   Post,
@@ -21,6 +22,29 @@ import { EventsService } from './events.service';
 @Controller()
 export class EventsController {
   constructor(private readonly events: EventsService) {}
+
+  /** 活动列表（ADMIN）：GET /admin/events，按开始时间倒序 */
+  @Roles(UserRole.ADMIN)
+  @Get('admin/events')
+  listEvents() {
+    return this.events.listEvents();
+  }
+
+  /** 活动报名名单（ADMIN）：GET /admin/events/:id/registrations */
+  @Roles(UserRole.ADMIN)
+  @Get('admin/events/:id/registrations')
+  listRegistrations(@Param('id') id: string) {
+    return this.events.listRegistrations(id);
+  }
+
+  /** 活动报名名单导出 CSV（ADMIN）：GET /admin/events/:id/registrations/export */
+  @Roles(UserRole.ADMIN)
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header('Content-Disposition', 'attachment; filename="event-registrations.csv"')
+  @Get('admin/events/:id/registrations/export')
+  exportRegistrations(@Param('id') id: string) {
+    return this.events.exportRegistrationsCsv(id);
+  }
 
   /** 发布活动/比赛（ADMIN） */
   @Roles(UserRole.ADMIN)

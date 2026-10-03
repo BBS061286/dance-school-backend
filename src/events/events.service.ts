@@ -445,4 +445,97 @@ export class EventsService {
     }
     return [...userIds];
   }
+
+  // ---------------------------------------------------------------- 活动管理（ADMIN）
+
+  /**
+   * 活动列表（GET /admin/events，ADMIN）：
+   * [{ id, title, startTime, endTime, venue, _count: { registrations } }]，
+   * 按 startTime 倒序。venue 取 Event.location（schema 无 venue 字段）。
+   */
+  async listEvents() {
+    const rows = await this.prisma.event.findMany({
+      select: {
+        id: true,
+        title: true,
+        startTime: true,
+        endTime: true,
+        location: true,
+        _count: { select: { registrations: true } },
+      },
+      orderBy: { startTime: 'desc' },
+    });
+    return rows.map((e) => ({
+      id: e.id,
+      title: e.title,
+      startTime: e.startTime,
+      endTime: e.endTime,
+      venue: e.location,
+      _count: e._count,
+    }));
+  }
+
+  /**
+   * 活动报名名单（GET /admin/events/:id/registrations，ADMIN）。
+   * 字段取自 EventRegistration（含 student / parent 的 name、phone）。
+   * 注：schema 的 EventRegistration 无 groupName / paidAt 字段，故不返回。
+   */
+  async listRegistrations(eventId: string) {
+    const event = await this.prisma.event.findUnique({
+      where: { id: eventId },
+      select: { id: true },
+    });
+    if (!event) throw new NotFoundException(`活动不存在：${eventId}`);
+    const regs = await this.prisma.eventRegistration.findMany({
+      where: { eventId },
+      include: {
+        student: { select: { id: true, name: true } },
+        parent: { select: { id: true, name: true, phone: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    return regs.map((r) => ({
+      id: r.id,
+      student: r.student,
+      parent: r.parent,
+      status: r.status,
+      ticketQuantity: r.ticketQuantity,
+      ticketTotalCents: r.ticketTotalCents,
+      participationFeeCents: r.participationFeeCents,
+      feeStatus: r.feeStatus,
+      createdAt: r.createdAt,
+    }));
+  }
+
+  /**
+   * 活动报名名单导出 CSV（GET /admin/events/:id/registrations/export，ADMIN）：
+   * 带 UTF-8 BOM，列：姓名,联系人,电话,组别,状态,费用(元),报名时间。
+   * 组别列为空（schema 无该字段）；费用取 participationFeeCents ?? ticketTotalCents。
+   */
+  async exportRegistrationsCsv(eventId: string): Promise<string> {
+    const regs = await this.listRegistrations(eventId);
+    const header = '姓名,联系人,电话,组别,状态,费用(元),报名时间';
+    const lines = regs.map((r) => {
+      const name = r.student?.name ?? r.parent.name;
+      const feeCents = r.participationFeeCents ?? r.ticketTotalCents ?? 0;
+      return [
+        name,
+        r.parent.name,
+        r.parent.phone ?? '',
+        '',
+        r.status,
+        (feeCents / 100).toFixed(2),
+        r.createdAt.toISOString(),
+      ]
+        .map(csvCell)
+        .join(',');
+    });
+    return '\uFEFF' + [header, ...lines].join('\n');
+  }
+}
+
+/** CSV 单元格转义：含逗号/引号/换行时加引号并转义引号 */
+function csvCell(v: string): string {
+  if (/[",\n\r]/.test(v)) return `"${v.replace(/"/g, '""')}"`;
+  return v;
 }

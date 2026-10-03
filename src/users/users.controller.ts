@@ -1,4 +1,6 @@
 import { BadRequestException, Body, Controller, Get, Patch, Request } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { RequestUser } from '../common/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateMeDto } from './dto/update-me.dto';
@@ -15,6 +17,13 @@ export class UsersController {
   @Get('me')
   me(@Request() req: { user: { id: string } }) {
     return this.usersService.getMe(req.user.id);
+  }
+
+  /** 我的学员列表（家长 / 成人学员）：[{ id, name }] */
+  @Roles(UserRole.PARENT, UserRole.ADULT_STUDENT)
+  @Get('me/students')
+  myStudents(@Request() req: { user: RequestUser }) {
+    return this.usersService.myStudents(req.user);
   }
 
   /**

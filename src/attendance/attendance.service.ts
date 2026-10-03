@@ -14,6 +14,8 @@ import { RequestUser, TxClient } from '../common/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CancelOccurrenceDto, CheckInDto } from './dto/attendance.dto';
+import { CheckInByCodeDto } from './dto/checkin-code.dto';
+import { signCheckInCode, verifyCheckInCode } from './checkin-code.util';
 
 @Injectable()
 export class AttendanceService {
@@ -350,6 +352,19 @@ export class AttendanceService {
       occurrenceId,
       dto.enrollment_id,
     );
+    return this.doSelfCheckIn(user, occurrence, enrollment, dto.signature);
+  }
+
+  /**
+   * 自助打卡核心（SELF → PENDING_CONFIRMATION，幂等，附带补课抵扣）。
+   * 供 selfCheckIn / selfCheckInByCode 共用。
+   */
+  private async doSelfCheckIn(
+    user: RequestUser,
+    occurrence: { id: string },
+    enrollment: { id: string; studentId: string },
+    signature?: string,
+  ) {
     await this.assertEnrollmentBelongsToUser(user, enrollment.studentId);
 
     const existing = await this.prisma.attendanceRecord.findUnique({
@@ -368,10 +383,84 @@ export class AttendanceService {
         enrollmentId: enrollment.id,
         checkInMethod: 'SELF',
         status: 'PENDING_CONFIRMATION',
+        signatureUrl: signature ?? null,
       },
     });
     await this.applyMakeupOnCheckIn(enrollment.id, occurrence.id, record.id);
     return record;
+  }
+
+  /**
+   * 生成签到二维码码值（POST /admin/occurrences/:id/checkin-code）：
+   * HMAC-SHA256 签名，15 分钟有效，不存 DB。
+   */
+  async createCheckInCode(occurrenceId: string) {
+    const occurrence = await this.prisma.sessionOccurrence.findUnique({
+      where: { id: occurrenceId },
+      select: { id: true },
+    });
+    if (!occurrence) throw new NotFoundException(`课次不存在：${occurrenceId}`);
+    return { code: signCheckInCode(occurrence.id) };
+  }
+
+  /**
+   * 扫码打卡（POST /check-in/by-code，家长 / 成人学员）：
+   * 验签（格式、签名、过期）→ 取出 occurrenceId → 兼容解析 enrollment
+   * （enrollment_id 可能是报名 id，也可能是学员 id）→ 复用自助打卡核心。
+   */
+  async selfCheckInByCode(user: RequestUser, dto: CheckInByCodeDto) {
+    let occurrenceId: string;
+    try {
+      occurrenceId = verifyCheckInCode(dto.code);
+    } catch (e) {
+      throw new BadRequestException((e as Error).message);
+    }
+    const occurrence = await this.prisma.sessionOccurrence.findUnique({
+      where: { id: occurrenceId },
+    });
+    if (!occurrence) throw new NotFoundException(`课次不存在：${occurrenceId}`);
+    if (
+      occurrence.status === 'CANCELLED' ||
+      occurrence.status === 'POSTPONED'
+    ) {
+      throw new ConflictException('该课次已取消，无法打卡');
+    }
+    const enrollment = await this.resolveCheckInEnrollment(
+      occurrence.classSessionId,
+      dto.enrollment_id,
+    );
+    if (enrollment.status !== 'CONFIRMED') {
+      throw new ConflictException('只有已确认的报名才能打卡');
+    }
+    return this.doSelfCheckIn(user, occurrence, enrollment, dto.signature);
+  }
+
+  /**
+   * 打卡报名兼容解析：
+   * 1) 先按 enrollment id 查（且必须属于该课次所在班级）；
+   * 2) 查不到再按 student id 查该学员在本班最新一条未取消的报名；
+   * 3) 都查不到 → NotFoundException("找不到该学员的有效报名")。
+   */
+  private async resolveCheckInEnrollment(
+    classSessionId: string,
+    idOrStudentId: string,
+  ) {
+    const byEnrollment = await this.prisma.enrollment.findUnique({
+      where: { id: idOrStudentId },
+    });
+    if (byEnrollment && byEnrollment.classSessionId === classSessionId) {
+      return byEnrollment;
+    }
+    const byStudent = await this.prisma.enrollment.findFirst({
+      where: {
+        studentId: idOrStudentId,
+        classSessionId,
+        status: { not: 'CANCELLED' },
+      },
+      orderBy: { enrolledAt: 'desc' },
+    });
+    if (byStudent) return byStudent;
+    throw new NotFoundException('找不到该学员的有效报名');
   }
 
   /**

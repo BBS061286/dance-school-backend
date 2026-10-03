@@ -17,6 +17,11 @@ export class CheckInDto {
   /** 报名 id */
   @IsUUID('4')
   enrollment_id: string;
+
+  /** 手写签名（图片 URL 或 dataURL），可选；存入 AttendanceRecord.signatureUrl */
+  @IsOptional()
+  @IsString()
+  signature?: string;
 }
 
 /** 教师打卡：class_session_id 与 extra_lesson_slot_id 二选一 */

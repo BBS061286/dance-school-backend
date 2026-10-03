@@ -335,7 +335,15 @@ export class EnrollmentsService {
       },
       include: {
         student: { select: { id: true, name: true } },
-        classSession: { select: { id: true, course: { select: { title: true } } } },
+        classSession: {
+          select: {
+            id: true,
+            startTime: true,
+            endTime: true,
+            campus: { select: { id: true, name: true } },
+            course: { select: { title: true } },
+          },
+        },
       },
       orderBy: { enrolledAt: 'desc' },
     });

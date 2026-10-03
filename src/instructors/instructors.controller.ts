@@ -13,6 +13,13 @@ import { InstructorsService } from './instructors.service';
 export class InstructorsController {
   constructor(private readonly instructors: InstructorsService) {}
 
+  /** 私教老师浏览（家长 / 成人学员）：GET /instructors/browse */
+  @Roles(UserRole.PARENT, UserRole.ADULT_STUDENT)
+  @Get('instructors/browse')
+  browseInstructors() {
+    return this.instructors.browseInstructors();
+  }
+
   /** 教师列表：GET /admin/instructors */
   @Get('admin/instructors')
   list() {

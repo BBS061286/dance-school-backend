@@ -8,6 +8,7 @@ import {
   CheckInDto,
   InstructorCheckInDto,
 } from './dto/attendance.dto';
+import { CheckInByCodeDto } from './dto/checkin-code.dto';
 
 /**
  * 打卡 / 课次路由（设计文档 §6.1/6.2/6.7/6.18/6.20）。
@@ -73,6 +74,23 @@ export class AttendanceController {
     @Param('id') id: string,
   ) {
     return this.attendance.confirmAttendance(req.user.id, id);
+  }
+
+  /** 生成签到二维码码值（ADMIN / INSTRUCTOR）：15 分钟有效，不存 DB */
+  @Roles(UserRole.ADMIN, UserRole.INSTRUCTOR)
+  @Post('admin/occurrences/:id/checkin-code')
+  createCheckInCode(@Param('id') id: string) {
+    return this.attendance.createCheckInCode(id);
+  }
+
+  /** 扫码打卡（家长 / 成人学员）：{ code, enrollment_id, signature? } */
+  @Roles(UserRole.PARENT, UserRole.ADULT_STUDENT)
+  @Post('check-in/by-code')
+  selfCheckInByCode(
+    @Request() req: { user: RequestUser },
+    @Body() dto: CheckInByCodeDto,
+  ) {
+    return this.attendance.selfCheckInByCode(req.user, dto);
   }
 
   /** 教师打卡（INSTRUCTOR）：常规班级与加课二选一 */

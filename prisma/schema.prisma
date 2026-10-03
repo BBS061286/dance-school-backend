@@ -733,6 +733,8 @@ model AttendanceRecord {
   confirmedBy        User?            @relation("AttendanceConfirmer", fields: [confirmedById], references: [id])
   confirmedAt        DateTime?
   isMakeup           Boolean          @default(false)
+  // 签到手写签名（图片 URL 或 dataURL，可选；需先执行 manual-sql/003_attendance_signature.sql）
+  signatureUrl       String?
 
   @@unique([sessionOccurrenceId, enrollmentId])
 }

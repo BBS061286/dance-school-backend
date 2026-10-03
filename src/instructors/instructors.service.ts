@@ -143,4 +143,27 @@ export class InstructorsService {
     });
     return updated;
   }
+
+  /**
+   * 私教老师浏览（GET /instructors/browse，家长 / 成人学员）：
+   * [{ id, name, avatarUrl, bio, specialties, campusName }]，
+   * campusName 取 instructor.defaultCampus?.name。
+   */
+  async browseInstructors() {
+    const rows = await this.prisma.instructor.findMany({
+      include: {
+        user: { select: { name: true, avatarUrl: true } },
+        defaultCampus: { select: { name: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows.map((i) => ({
+      id: i.id,
+      name: i.user.name,
+      avatarUrl: i.user.avatarUrl,
+      bio: i.bio,
+      specialties: i.specialties,
+      campusName: i.defaultCampus?.name ?? null,
+    }));
+  }
 }
