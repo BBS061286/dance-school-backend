@@ -95,6 +95,7 @@ export class CampusesService {
 
     const byCourse = new Map<string, {
       id: string; title: string; weekdays: number[]; timeRange: string | null;
+      format: string; audience: string;
       teachers: Set<string>; sessions: Array<{
         id: string; startTime: Date; endTime: Date; room: string | null;
         instructor: string | null; enrolled: number; capacity: number | null; status: string;
@@ -102,6 +103,7 @@ export class CampusesService {
     }>();
     const ensure = (course: {
       id: string; title: string; weekdays: number[]; timeRange: string | null;
+      format: string; audience: string;
       instructors: Array<{ instructor: { user: { name: string } | null } | null }>;
     }) => {
       let g = byCourse.get(course.id);
@@ -111,6 +113,8 @@ export class CampusesService {
           title: course.title,
           weekdays: course.weekdays ?? [],
           timeRange: course.timeRange ?? null,
+          format: course.format,
+          audience: course.audience,
           teachers: new Set<string>(),
           sessions: [],
         };
@@ -145,6 +149,8 @@ export class CampusesService {
       title: g.title,
       weekdays: g.weekdays,
       timeRange: g.timeRange,
+      format: g.format,
+      audience: g.audience,
       teachers: [...g.teachers],
       totalEnrolled: g.sessions.reduce((a, s) => a + (s.enrolled || 0), 0),
       totalCapacity: g.sessions.reduce((a, s) => a + (s.capacity || 0), 0),
