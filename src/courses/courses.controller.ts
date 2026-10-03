@@ -33,6 +33,13 @@ export class CoursesController {
     return this.courses.adminList(query);
   }
 
+  /** 管理端课程详情：GET /admin/courses/:id/detail（ADMIN） */
+  @Roles(UserRole.ADMIN)
+  @Get('admin/courses/:id/detail')
+  adminDetail(@Param('id') id: string) {
+    return this.courses.adminDetail(id);
+  }
+
   /** 新增课程：POST /admin/courses（ADMIN） */
   @Roles(UserRole.ADMIN)
   @Post('admin/courses')

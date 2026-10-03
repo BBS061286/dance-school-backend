@@ -316,4 +316,156 @@ export class CoursesService {
       })),
     };
   }
+
+  /**
+   * 管理端课程详情：GET /admin/courses/:id/detail（ADMIN）。
+   * 返回基本信息 + 学期（含起止日期）+ 全部班次（日期/时间/地点/老师/报名/名额）
+   * + 每个班次的报名学员（含状态、候补序号、缴费：应收/已付/已退/净付）+ 汇总统计。
+   * 缴费口径与退款试算一致：订单已付按明细金额比例分摊。
+   */
+  async adminDetail(id: string) {
+    const course = await this.prisma.course.findUnique({
+      where: { id },
+      include: {
+        term: true,
+        campuses: {
+          select: { campus: { select: { id: true, name: true } } },
+        },
+        instructors: {
+          include: {
+            instructor: { include: { user: { select: { name: true } } } },
+          },
+        },
+        classSessions: {
+          orderBy: { startTime: 'asc' },
+          include: {
+            campus: { select: { id: true, name: true } },
+            instructor: {
+              include: { user: { select: { name: true } } },
+            },
+            enrollments: {
+              include: { student: { select: { id: true, name: true } } },
+              orderBy: { enrolledAt: 'asc' },
+            },
+          },
+        },
+      },
+    });
+    if (!course) throw new NotFoundException('课程不存在');
+
+    // 批量算每条报名的缴费，避免 N+1
+    const enrollmentIds: string[] = [];
+    for (const s of course.classSessions) {
+      for (const e of s.enrollments) enrollmentIds.push(e.id);
+    }
+    const items = enrollmentIds.length
+      ? await this.prisma.orderItem.findMany({
+          where: { enrollmentId: { in: enrollmentIds } },
+          include: { order: { include: { payments: true } }, refunds: true },
+        })
+      : [];
+    const payMap = new Map<
+      string,
+      { amountCents: number; paidCents: number; refundedCents: number }
+    >();
+    for (const item of items) {
+      if (!item.enrollmentId) continue;
+      const orderPaid = item.order.payments
+        .filter((pay) => pay.status === 'SUCCEEDED')
+        .reduce((sum, pay) => sum + pay.amountCents, 0);
+      const share =
+        item.order.amountCents > 0
+          ? Math.round((orderPaid * item.amountCents) / item.order.amountCents)
+          : 0;
+      const refunded = item.refunds.reduce(
+        (sum, r) => sum + r.amountCents,
+        0,
+      );
+      const cur = payMap.get(item.enrollmentId) ?? {
+        amountCents: 0,
+        paidCents: 0,
+        refundedCents: 0,
+      };
+      cur.amountCents += item.amountCents;
+      cur.paidCents += share;
+      cur.refundedCents += refunded;
+      payMap.set(item.enrollmentId, cur);
+    }
+
+    const teachers = new Set<string>();
+    for (const ci of course.instructors) {
+      const n = ci.instructor?.user?.name;
+      if (n) teachers.add(n);
+    }
+
+    const sessions = course.classSessions.map((s) => {
+      const enrollments = s.enrollments.map((e) => {
+        const pay = payMap.get(e.id) ?? {
+          amountCents: 0,
+          paidCents: 0,
+          refundedCents: 0,
+        };
+        return {
+          id: e.id,
+          status: e.status,
+          waitlistPosition: e.waitlistPosition,
+          enrolledAt: e.enrolledAt,
+          student: e.student,
+          amountCents: pay.amountCents,
+          paidCents: pay.paidCents,
+          refundedCents: pay.refundedCents,
+          netCents: pay.paidCents - pay.refundedCents,
+        };
+      });
+      return {
+        id: s.id,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        room: s.room,
+        status: s.status,
+        capacity: s.capacity,
+        enrolledCount: s.enrolledCount,
+        campus: s.campus,
+        instructor: s.instructor
+          ? { id: s.instructor.id, name: s.instructor.user?.name ?? '—' }
+          : null,
+        enrollments,
+      };
+    });
+
+    const allEnrollments = sessions.flatMap((s) => s.enrollments);
+    const stats = {
+      sessionCount: sessions.length,
+      studentCount: allEnrollments.length,
+      totalCapacity: sessions.reduce((a, s) => a + (s.capacity ?? 0), 0),
+      totalAmountCents: allEnrollments.reduce((a, e) => a + e.amountCents, 0),
+      totalPaidCents: allEnrollments.reduce((a, e) => a + e.paidCents, 0),
+      totalNetCents: allEnrollments.reduce((a, e) => a + e.netCents, 0),
+    };
+
+    return {
+      id: course.id,
+      title: course.title,
+      description: course.description,
+      format: course.format,
+      audience: course.audience,
+      skillLevel: course.skillLevel,
+      priceCents: course.priceCents,
+      status: course.status,
+      weekdays: course.weekdays,
+      timeRange: course.timeRange,
+      term: course.term
+        ? {
+            id: course.term.id,
+            name: course.term.name,
+            startDate: course.term.startDate,
+            endDate: course.term.endDate,
+          }
+        : null,
+      campuses: course.campuses.map((c) => c.campus),
+      teachers: [...teachers],
+      sessions,
+      stats,
+    };
+  }
 }
