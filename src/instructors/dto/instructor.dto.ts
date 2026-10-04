@@ -18,6 +18,13 @@ export class UpdateInstructorDto {
   phone?: string;
 
   @IsOptional()
+  isActive?: boolean;
+
+  @IsOptional()
+  @IsArray({ message: '可排课时间必须是数组' })
+  availableWeekdays?: number[];
+
+  @IsOptional()
   @IsString({ message: 'bio 必须是字符串' })
   bio?: string;
 
@@ -55,6 +62,13 @@ export class CreateInstructorDto {
   @IsOptional()
   @IsString({ message: '电话必须是字符串' })
   phone?: string;
+
+  @IsOptional()
+  isActive?: boolean;
+
+  @IsOptional()
+  @IsArray({ message: '可排课时间必须是数组' })
+  availableWeekdays?: number[];
 
   @IsOptional()
   @IsString({ message: '简介必须是字符串' })

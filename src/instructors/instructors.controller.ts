@@ -39,6 +39,12 @@ export class InstructorsController {
     return this.instructors.detail(id);
   }
 
+  /** 教师课时统计：GET /admin/instructors/:id/stats */
+  @Get('admin/instructors/:id/stats')
+  teachingStats(@Param('id') id: string) {
+    return this.instructors.teachingStats(id);
+  }
+
   /** 编辑教师资料：PATCH /admin/instructors/:id */
   @Patch('admin/instructors/:id')
   update(@Param('id') id: string, @Body() dto: UpdateInstructorDto) {

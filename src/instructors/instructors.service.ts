@@ -129,7 +129,69 @@ export class InstructorsService {
       },
     });
     if (!instructor) throw new NotFoundException('教师不存在');
-    return instructor;
+    // 该老师课程的学员评价
+    const courseIds = instructor.classSessions.map((cs) => cs.course.id);
+    const reviews = courseIds.length
+      ? await this.prisma.courseReview.findMany({
+          where: { courseId: { in: [...new Set(courseIds)] } },
+          include: {
+            course: { select: { id: true, title: true } },
+            createdBy: { select: { id: true, name: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 20,
+        })
+      : [];
+    return { ...instructor, reviews };
+  }
+
+  /** 教师课时统计：GET /admin/instructors/:id/stats — 按学期分组 */
+  async teachingStats(id: string) {
+    const instructor = await this.prisma.instructor.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!instructor) throw new NotFoundException('教师不存在');
+    const sessions = await this.prisma.classSession.findMany({
+      where: { instructorId: id },
+      select: {
+        id: true,
+        course: {
+          select: {
+            id: true,
+            title: true,
+            format: true,
+            term: { select: { id: true, name: true } },
+          },
+        },
+        occurrences: {
+          select: { id: true, date: true, status: true },
+        },
+        _count: { select: { enrollments: true } },
+      },
+    });
+    // 按学期聚合
+    const byTerm = new Map<string, { termId: string; termName: string; sessions: number; occurrences: number; students: number }>();
+    for (const sess of sessions) {
+      const termId = sess.course.term?.id ?? 'no-term';
+      const termName = sess.course.term?.name ?? '未分学期';
+      if (!byTerm.has(termId)) {
+        byTerm.set(termId, { termId, termName, sessions: 0, occurrences: 0, students: 0 });
+      }
+      const g = byTerm.get(termId)!;
+      g.sessions += 1;
+      g.occurrences += sess.occurrences.length;
+      g.students += sess._count.enrollments;
+    }
+    // 打卡数（实际授课）
+    const checkinCount = await this.prisma.instructorCheckin.count({
+      where: { instructorId: id },
+    });
+    return {
+      byTerm: [...byTerm.values()],
+      totalSessions: sessions.length,
+      totalCheckins: checkinCount,
+    };
   }
 
   /** PATCH /admin/instructors/:id：管理端编辑教师资料 */
@@ -146,8 +208,8 @@ export class InstructorsService {
       });
       if (!campus) throw new NotFoundException('校区不存在');
     }
-    // 同步更新关联 User 的姓名/电话
-    if (dto.name !== undefined || dto.phone !== undefined) {
+    // 同步更新关联 User 的姓名/电话/状态
+    if (dto.name !== undefined || dto.phone !== undefined || dto.isActive !== undefined) {
       const inst = await this.prisma.instructor.findUnique({
         where: { id },
         select: { userId: true },
@@ -158,6 +220,7 @@ export class InstructorsService {
           data: {
             ...(dto.name !== undefined ? { name: dto.name } : {}),
             ...(dto.phone !== undefined ? { phone: dto.phone || null } : {}),
+            ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
           },
         });
       }
@@ -171,6 +234,9 @@ export class InstructorsService {
           : {}),
         ...(dto.default_campus_id !== undefined
           ? { defaultCampusId: dto.default_campus_id || null }
+          : {}),
+        ...(dto.availableWeekdays !== undefined
+          ? { availableWeekdays: dto.availableWeekdays }
           : {}),
       },
       include: {

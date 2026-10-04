@@ -323,6 +323,8 @@ model Instructor {
   specialties     String[] // 如 Ballet / HipHop
   defaultCampusId String?
   defaultCampus   Campus?  @relation(fields: [defaultCampusId], references: [id])
+  // 可排课时间：每周哪几天有空（0=周日..6=周六），空数组=未设置
+  availableWeekdays Int[] @default([])
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
