@@ -140,6 +140,48 @@ export class StudentsService {
       },
     });
     if (!student) throw new NotFoundException('学员不存在');
-    return student;
+
+    // 按学期汇总补课额度：{ termId, termName, quota, used, remaining }
+    const termIds = [
+      ...new Set(
+        (await this.prisma.enrollment.findMany({
+          where: { studentId: id },
+          include: {
+            classSession: { select: { course: { select: { termId: true } } } },
+          },
+        }))
+          .map((e) => e.classSession.course.termId)
+          .filter((t): t is string => !!t),
+      ),
+    ];
+    const makeupQuotas: Array<{
+      termId: string;
+      termName: string;
+      quota: number;
+      used: number;
+      remaining: number;
+    }> = [];
+    for (const termId of termIds) {
+      const term = await this.prisma.term.findUnique({ where: { id: termId } });
+      if (!term) continue;
+      const used = await this.prisma.makeupBooking.count({
+        where: {
+          enrollment: {
+            studentId: id,
+            classSession: { course: { termId } },
+          },
+          status: { in: ['BOOKED', 'ATTENDED'] },
+        },
+      });
+      makeupQuotas.push({
+        termId: term.id,
+        termName: term.name,
+        quota: term.makeupQuota,
+        used,
+        remaining: Math.max(0, term.makeupQuota - used),
+      });
+    }
+
+    return { ...student, makeupQuotas };
   }
 }
