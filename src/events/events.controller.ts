@@ -13,7 +13,7 @@ import { UserRole } from '@prisma/client';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RequestUser } from '../common/types';
-import { CreateEventDto, CreateNoticeDto, IssueFeeDto, PayEventRegistrationDto, RegisterEventDto } from './dto/events.dto';
+import { AdminRegisterEventDto, CreateEventDto, CreateNoticeDto, IssueFeeDto, PayEventRegistrationDto, RegisterEventDto } from './dto/events.dto';
 import { EventsService } from './events.service';
 
 /**
@@ -87,6 +87,17 @@ export class EventsController {
     @Body() dto: RegisterEventDto,
   ) {
     return this.events.register(req.user, id, dto);
+  }
+
+  /** 管理员代报名活动/比赛（ADMIN） */
+  @Roles(UserRole.ADMIN)
+  @Post('admin/events/:id/register')
+  adminRegister(
+    @Request() req: { user: RequestUser },
+    @Param('id') id: string,
+    @Body() dto: AdminRegisterEventDto,
+  ) {
+    return this.events.adminRegister(req.user.id, id, dto);
   }
 
   /** 取消活动报名 */

@@ -88,6 +88,17 @@ export class RegisterEventDto {
   student_id?: string;
 }
 
+/** 管理员代报名活动/比赛：{ student_id, ticket_quantity? } */
+export class AdminRegisterEventDto {
+  @IsUUID('4')
+  student_id: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  ticket_quantity?: number;
+}
+
 /** 管理员发放参赛/参与费用 */
 export class IssueFeeDto {
   @IsInt()

@@ -9,12 +9,14 @@ import {
   EventRegistrationItemType,
   NotificationSourceType,
   NotificationType,
+  Relationship,
 } from '@prisma/client';
 import { BillingService } from '../billing/billing.service';
 import { RequestUser } from '../common/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
+  AdminRegisterEventDto,
   CreateEventDto,
   CreateNoticeDto,
   IssueFeeDto,
@@ -196,6 +198,106 @@ export class EventsService {
     if (event.requiresTicket && (ticketTotalCents ?? 0) > 0) {
       await this.createTicketOrder(user.id, registration.id, ticketTotalCents!);
     }
+    return registration;
+  }
+
+  /**
+   * 管理员代报名活动/比赛（ADMIN）：POST /admin/events/:id/register。
+   * 家长电话报名、现场报名等场景；票务逻辑与 register 一致。
+   */
+  async adminRegister(adminId: string, eventId: string, dto: AdminRegisterEventDto) {
+    const event = await this.prisma.event.findUnique({
+      where: { id: eventId },
+    });
+    if (!event) throw new NotFoundException(`活动不存在：${eventId}`);
+    if (!event.requiresRegistration) {
+      throw new BadRequestException('该活动无需报名');
+    }
+    if (event.status !== 'SCHEDULED') {
+      throw new ConflictException('该活动当前不可报名');
+    }
+
+    const student = await this.prisma.student.findUnique({
+      where: { id: dto.student_id },
+      include: { parentLinks: true },
+    });
+    if (!student) throw new NotFoundException(`学员不存在：${dto.student_id}`);
+    if (student.parentLinks.length === 0) {
+      throw new BadRequestException('该学员未绑定账号（无家长关联），请先绑定后再代报名');
+    }
+    // 优先：成人学员自己（SELF）> 首选联系人 > 第一个
+    const link =
+      student.parentLinks.find((l) => l.relationship === Relationship.SELF) ??
+      student.parentLinks.find((l) => l.isPrimaryContact) ??
+      student.parentLinks[0];
+    const parentId = link.parentId;
+
+    // 容量检查
+    if (event.capacity != null) {
+      const count = await this.prisma.eventRegistration.count({
+        where: { eventId, status: 'REGISTERED' },
+      });
+      if (count >= event.capacity) {
+        throw new BadRequestException('名额已满');
+      }
+    }
+
+    // 票务逻辑照抄 register
+    let ticketQuantity: number | null = null;
+    let ticketTotalCents: number | null = null;
+    if (event.requiresTicket) {
+      const qty = dto.ticket_quantity ?? 1;
+      if (
+        event.maxTicketsPerRegistration &&
+        qty > event.maxTicketsPerRegistration
+      ) {
+        throw new BadRequestException(
+          `单次报名最多购票 ${event.maxTicketsPerRegistration} 张`,
+        );
+      }
+      ticketQuantity = qty;
+      ticketTotalCents = (event.ticketPriceCents ?? 0) * qty;
+    }
+
+    // 同一活动同学员重复报名 → 幂等返回已有记录
+    const dup = await this.prisma.eventRegistration.findFirst({
+      where: {
+        eventId,
+        studentId: student.id,
+        status: { in: ['REGISTERED', 'WAITLISTED'] },
+      },
+    });
+    if (dup) return dup;
+
+    const registration = await this.prisma.eventRegistration.create({
+      data: {
+        eventId,
+        studentId: student.id,
+        parentId,
+        status: 'REGISTERED',
+        ticketQuantity,
+        ticketTotalCents,
+      },
+    });
+
+    if (event.requiresTicket && (ticketTotalCents ?? 0) > 0) {
+      await this.createTicketOrder(parentId, registration.id, ticketTotalCents!);
+    }
+
+    // 通知家长（失败不影响报名）
+    try {
+      await this.notifications.notify({
+        userId: parentId,
+        type: NotificationType.NOTICE,
+        title: `管理员已帮您的孩子报名「${event.title}」`,
+        body: `学员${student.name}已成功报名${event.category === 'COMPETITION' ? '比赛' : '活动'}「${event.title}」，请留意后续通知。`,
+        sourceType: NotificationSourceType.EVENT,
+        sourceId: event.id,
+      });
+    } catch {
+      /* ignore */
+    }
+
     return registration;
   }
 
