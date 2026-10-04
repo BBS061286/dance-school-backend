@@ -83,9 +83,26 @@ export class StudentsService {
             classSession: {
               include: {
                 course: {
-                  select: { id: true, title: true, format: true },
+                  select: {
+                    id: true,
+                    title: true,
+                    format: true,
+                    term: { select: { id: true, name: true } },
+                  },
                 },
                 campus: { select: { id: true, name: true } },
+                instructor: {
+                  select: { id: true, user: { select: { name: true } } },
+                },
+                occurrences: {
+                  select: {
+                    id: true,
+                    sessionNumber: true,
+                    date: true,
+                    status: true,
+                  },
+                  orderBy: { sessionNumber: 'asc' },
+                },
               },
             },
             // 缴费：经 OrderItem → Order → Payment/RefundRecord 流水
@@ -141,6 +158,41 @@ export class StudentsService {
     });
     if (!student) throw new NotFoundException('学员不存在');
 
+    const eventRegistrations = await this.prisma.eventRegistration.findMany({
+      where: { studentId: id },
+      include: {
+        event: {
+          select: {
+            id: true,
+            title: true,
+            category: true,
+            startTime: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // 每条报名的出勤记录（按课次）
+    const enrollmentIds = student.enrollments.map((e) => e.id);
+    const attendanceRecords = await this.prisma.attendanceRecord.findMany({
+      where: { enrollmentId: { in: enrollmentIds } },
+      select: {
+        enrollmentId: true,
+        sessionOccurrenceId: true,
+        status: true,
+        checkInMethod: true,
+      },
+    });
+    const attByKey = new Map(
+      attendanceRecords.map((r) => [
+        `${r.enrollmentId}:${r.sessionOccurrenceId}`,
+        r,
+      ]),
+    );
+
+    if (!student) throw new NotFoundException('学员不存在');
+
     // 按学期汇总补课额度：{ termId, termName, quota, used, remaining }
     const termIds = [
       ...new Set(
@@ -182,6 +234,12 @@ export class StudentsService {
       });
     }
 
-    return { ...student, makeupQuotas };
+    return {
+      ...student,
+      eventRegistrations,
+      // 每条报名每节课次的出勤状态，供前端拼上课进度
+      attendanceMap: Object.fromEntries(attByKey),
+      makeupQuotas,
+    };
   }
 }
