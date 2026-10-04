@@ -48,13 +48,23 @@ export class MigrationService implements OnModuleInit {
       if (appliedSet.has(file)) continue;
       this.logger.log(`正在执行迁移: ${file}`);
       const sql = fs.readFileSync(path.join(dir, file), 'utf8');
-      // 拆成单条执行（Postgres 不允许一条 query 里多条 DDL 混事务时出问题）
-      const statements = sql
-        .split(/;\s*\n/)
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
+      const statements = this.splitStatements(sql);
       for (const stmt of statements) {
-        await this.prisma.$executeRawUnsafe(stmt);
+        try {
+          await this.prisma.$executeRawUnsafe(stmt);
+        } catch (e) {
+          const msg = (e as Error).message ?? '';
+          // 幂等：对象已存在则跳过（兼容手动跑过的情况）
+          if (
+            msg.includes('already exists') ||
+            msg.includes('duplicate key') ||
+            msg.includes('DuplicateObject')
+          ) {
+            this.logger.warn(`跳过已存在: ${stmt.slice(0, 60)}...`);
+            continue;
+          }
+          throw e;
+        }
       }
       await this.prisma.$executeRawUnsafe(
         'INSERT INTO "schema_migrations" ("name") VALUES ($1) ON CONFLICT DO NOTHING',
@@ -62,5 +72,34 @@ export class MigrationService implements OnModuleInit {
       );
       this.logger.log(`迁移完成: ${file}`);
     }
+  }
+
+  /**
+   * 按语句切分 SQL，能正确处理 DO $$ ... $$ 块内的分号。
+   */
+  private splitStatements(sql: string): string[] {
+    const statements: string[] = [];
+    let current = '';
+    let inDollar = false;
+    // 去掉注释行，简化处理
+    const lines = sql.split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!inDollar && (trimmed.startsWith('--') || trimmed === '')) {
+        continue;
+      }
+      // 检测 $$ 开关（简化：只处理 $$，不处理 $tag$）
+      const dollarCount = (line.match(/\$\$/g) || []).length;
+      if (dollarCount % 2 === 1) {
+        inDollar = !inDollar;
+      }
+      current += line + '\n';
+      if (!inDollar && trimmed.endsWith(';')) {
+        statements.push(current.trim());
+        current = '';
+      }
+    }
+    if (current.trim()) statements.push(current.trim());
+    return statements.filter((s) => s.length > 0);
   }
 }

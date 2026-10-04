@@ -1,8 +1,5 @@
--- 037: 文件定向发送 + 文件库状态（幂等，可重复执行）
-DO $$ BEGIN
-  CREATE TYPE "DocumentStatus" AS ENUM ('LIBRARY', 'ACTIVE');
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+-- 037: 文件定向发送 + 文件库状态（幂等：已存在的对象由 migration service 自动跳过）
+CREATE TYPE "DocumentStatus" AS ENUM ('LIBRARY', 'ACTIVE');
 
 ALTER TABLE "Document" ADD COLUMN IF NOT EXISTS "status" "DocumentStatus" NOT NULL DEFAULT 'ACTIVE';
 
