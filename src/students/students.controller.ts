@@ -43,6 +43,13 @@ class SearchStudentsQueryDto {
 export class StudentsController {
   constructor(private readonly students: StudentsService) {}
 
+  /** 学员统计：GET /admin/students/stats */
+  @Roles(UserRole.ADMIN)
+  @Get('admin/students/stats')
+  stats() {
+    return this.students.stats();
+  }
+
   /** 全体学员搜索：GET /admin/students?audience=&campus=&weekday=&q= */
   @Roles(UserRole.ADMIN)
   @Get('admin/students')

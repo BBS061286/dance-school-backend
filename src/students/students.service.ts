@@ -23,6 +23,60 @@ export class StudentsService {
   constructor(private readonly prisma: PrismaService) {}
 
   /** GET /admin/students?audience=&campus=&weekday=&q= */
+  /** 学员统计：GET /admin/students/stats — 现役少儿/成人数量 */
+  async stats() {
+    // 现役 = 有至少一条 CONFIRMED 或 PENDING_PAYMENT 的报名
+    const activeEnrollments = await this.prisma.enrollment.findMany({
+      where: { status: { in: ['CONFIRMED', 'PENDING_PAYMENT'] } },
+      select: {
+        studentId: true,
+        student: {
+          select: {
+            id: true,
+            dob: true,
+            parentLinks: {
+              select: { relationship: true },
+            },
+          },
+        },
+      },
+    });
+    // 去重
+    const seen = new Map<string, { dob: Date | null; parentLinks: Array<{ relationship: string }> }>();
+    for (const e of activeEnrollments) {
+      if (!seen.has(e.studentId)) {
+        seen.set(e.studentId, {
+          dob: e.student.dob,
+          parentLinks: e.student.parentLinks,
+        });
+      }
+    }
+    let youth = 0;
+    let adult = 0;
+    const now = new Date();
+    for (const [, st] of seen) {
+      const hasSelf = st.parentLinks.some((l) => l.relationship === 'SELF');
+      const hasNonSelf = st.parentLinks.some((l) => l.relationship !== 'SELF');
+      let isAdult: boolean;
+      if (hasSelf) {
+        isAdult = true;
+      } else if (hasNonSelf) {
+        isAdult = false;
+      } else {
+        // 无关联按年龄
+        if (!st.dob) {
+          isAdult = false;
+        } else {
+          const age = (now.getTime() - new Date(st.dob).getTime()) / 31557600000;
+          isAdult = age >= 18;
+        }
+      }
+      if (isAdult) adult++;
+      else youth++;
+    }
+    return { youth, adult, total: youth + adult };
+  }
+
   async search(query: SearchStudentsQuery) {
     const where: Prisma.StudentWhereInput = {};
     if (query.audience === 'YOUTH' || query.audience === 'ADULT') {

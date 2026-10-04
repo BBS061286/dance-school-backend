@@ -12,21 +12,42 @@ import { CreateTermDto, UpdateTermDto } from './dto/term.dto';
 export class TermsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** GET /admin/terms：学期列表（含课程数），按开始日期倒序 */
-  async list() {
-    return this.prisma.term.findMany({
-      include: { _count: { select: { courses: true } } },
-      orderBy: { startDate: 'desc' },
+  /** 学期排序：当前进行中的学期优先，其余按开始日期倒序 */
+  private sortTerms<T extends { startDate: Date | string; endDate: Date | string }>(terms: T[]): T[] {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const isCurrent = (t: T) => {
+      const s = new Date(t.startDate);
+      const e = new Date(t.endDate);
+      s.setHours(0, 0, 0, 0);
+      e.setHours(23, 59, 59, 999);
+      return s <= today && today <= e;
+    };
+    return [...terms].sort((a, b) => {
+      const ac = isCurrent(a) ? 0 : 1;
+      const bc = isCurrent(b) ? 0 : 1;
+      if (ac !== bc) return ac - bc;
+      return new Date(b.startDate).getTime() - new Date(a.startDate).getTime();
     });
   }
 
-  /** GET /terms：仅返回启用中的学期（公开） */
+  /** GET /admin/terms：学期列表（含课程数），当前学期优先 */
+  async list() {
+    const terms = await this.prisma.term.findMany({
+      include: { _count: { select: { courses: true } } },
+      orderBy: { startDate: 'desc' },
+    });
+    return this.sortTerms(terms);
+  }
+
+  /** GET /terms：仅返回启用中的学期（公开），当前学期优先 */
   async active() {
-    return this.prisma.term.findMany({
+    const terms = await this.prisma.term.findMany({
       where: { isActive: true },
       select: { id: true, name: true, startDate: true, endDate: true },
       orderBy: { startDate: 'desc' },
     });
+    return this.sortTerms(terms);
   }
 
   /** POST /admin/terms：新建学期 */
