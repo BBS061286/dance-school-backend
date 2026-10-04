@@ -14,28 +14,11 @@ export class TermsService {
 
   /** 学期排序：当前进行中的学期优先，其余按开始日期倒序 */
   private sortTerms<T extends { startDate: Date | string; endDate: Date | string }>(terms: T[]): T[] {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const isCurrent = (t: T) => {
-      const s = new Date(t.startDate);
-      const e = new Date(t.endDate);
-      s.setHours(0, 0, 0, 0);
-      e.setHours(23, 59, 59, 999);
-      return s <= today && today <= e;
-    };
-    return [...terms].sort((a, b) => {
-      const ac = isCurrent(a) ? 0 : 1;
-      const bc = isCurrent(b) ? 0 : 1;
-      if (ac !== bc) return ac - bc;
-      // 非当前：往期按开始日期倒序，未来学期放最后（按开始日期正序）
-      const aFuture = new Date(a.startDate) > today;
-      const bFuture = new Date(b.startDate) > today;
-      if (aFuture !== bFuture) return aFuture ? 1 : -1;
-      if (aFuture) {
-        return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
-      }
-      return new Date(b.startDate).getTime() - new Date(a.startDate).getTime();
-    });
+    // 纯时间倒序：2027春 → 2026秋 → 2026春 → 2025秋
+    // 默认选中由前端控制（通用默认当前学期，教师分配默认未来学期）
+    return [...terms].sort(
+      (a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime(),
+    );
   }
 
   /** GET /admin/terms：学期列表（含课程数），当前学期优先 */
