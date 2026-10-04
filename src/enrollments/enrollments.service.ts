@@ -186,6 +186,53 @@ export class EnrollmentsService {
     }
   }
 
+  // ---------------------------------------------------------- 报名详情（含进度）
+
+  /**
+   * 我的报名详情（含上课进度）：GET /me/enrollments/:id/progress。
+   * 返回报名 + 班次课次列表 + 每节出勤状态。
+   */
+  async enrollmentProgress(userId: string, enrollmentId: string) {
+    const enrollment = await this.prisma.enrollment.findUnique({
+      where: { id: enrollmentId },
+      include: {
+        student: { select: { id: true, name: true } },
+        classSession: {
+          include: {
+            course: {
+              select: {
+                id: true,
+                title: true,
+                format: true,
+                term: { select: { id: true, name: true } },
+              },
+            },
+            campus: { select: { id: true, name: true } },
+            instructor: {
+              select: { id: true, user: { select: { name: true } } },
+            },
+            occurrences: {
+              select: { id: true, sessionNumber: true, date: true, status: true },
+              orderBy: { sessionNumber: 'asc' },
+            },
+          },
+        },
+      },
+    });
+    if (!enrollment) throw new NotFoundException('报名不存在');
+    const link = await this.prisma.parentStudentLink.findFirst({
+      where: { parentId: userId, studentId: enrollment.studentId },
+    });
+    if (!link) throw new ForbiddenException('无权查看该报名');
+    const records = await this.prisma.attendanceRecord.findMany({
+      where: { enrollmentId },
+      select: { sessionOccurrenceId: true, status: true },
+    });
+    const attendanceMap: Record<string, string> = {};
+    for (const r of records) attendanceMap[r.sessionOccurrenceId] = r.status;
+    return { ...enrollment, attendanceMap };
+  }
+
   // ------------------------------------------------------------------ 取消
 
   /**

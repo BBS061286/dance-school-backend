@@ -35,6 +35,15 @@ export class EnrollmentsController {
     return this.enrollments.myEnrollments(req.user.id);
   }
 
+  /** 我的报名详情（含上课进度） */
+  @Get('me/enrollments/:id/progress')
+  enrollmentProgress(
+    @Request() req: { user: RequestUser },
+    @Param('id') id: string,
+  ) {
+    return this.enrollments.enrollmentProgress(req.user.id, id);
+  }
+
   /** 取消报名（登录即可；归属在 service 校验；body 可选） */
   @Patch('enrollments/:id/cancel')
   cancel(

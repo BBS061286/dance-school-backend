@@ -164,6 +164,81 @@ export class TeacherService {
   }
 
   /**
+   * GET /me/instructor/sessions/:id/attendance-summary：本班学员出勤汇总。
+   * 每学员：已上/缺席/待确认/未上节数 + 每节明细。
+   */
+  async attendanceSummary(userId: string, sessionId: string) {
+    const instructor = await this.requireInstructor(userId);
+    const session = await this.prisma.classSession.findUnique({
+      where: { id: sessionId },
+      include: {
+        course: { select: { id: true, title: true, term: { select: { id: true, name: true } } } },
+        campus: { select: { id: true, name: true } },
+      },
+    });
+    if (!session) throw new NotFoundException('班级不存在');
+    if (session.instructorId !== instructor.id) {
+      throw new ForbiddenException('只能查看自己任教的班级');
+    }
+    const enrollments = await this.prisma.enrollment.findMany({
+      where: {
+        classSessionId: sessionId,
+        status: { in: ['CONFIRMED', 'PENDING_PAYMENT'] },
+      },
+      include: { student: { select: { id: true, name: true } } },
+      orderBy: { enrolledAt: 'asc' },
+    });
+    const occurrences = await this.prisma.sessionOccurrence.findMany({
+      where: { classSessionId: sessionId },
+      orderBy: { sessionNumber: 'asc' },
+      select: { id: true, sessionNumber: true, date: true, status: true },
+    });
+    const records = await this.prisma.attendanceRecord.findMany({
+      where: {
+        sessionOccurrenceId: { in: occurrences.map((o) => o.id) },
+        enrollmentId: { in: enrollments.map((e) => e.id) },
+      },
+    });
+    const byKey = new Map(records.map((r) => [`${r.enrollmentId}:${r.sessionOccurrenceId}`, r.status]));
+    const students = enrollments.map((e) => {
+      let confirmed = 0;
+      let absent = 0;
+      let pending = 0;
+      const detail = occurrences.map((o) => {
+        const st = byKey.get(`${e.id}:${o.id}`) ?? null;
+        if (st === 'CONFIRMED') confirmed++;
+        else if (st === 'ABSENT') absent++;
+        else if (st === 'PENDING_CONFIRMATION') pending++;
+        return {
+          occurrenceId: o.id,
+          sessionNumber: o.sessionNumber,
+          date: o.date,
+          occurrenceStatus: o.status,
+          attendance: st,
+        };
+      });
+      return {
+        enrollmentId: e.id,
+        student: e.student,
+        confirmed,
+        absent,
+        pending,
+        upcoming: occurrences.length - confirmed - absent - pending,
+        total: occurrences.length,
+        detail,
+      };
+    });
+    return {
+      session: {
+        id: session.id,
+        course: session.course,
+        campus: session.campus,
+      },
+      students,
+    };
+  }
+
+  /**
    * GET /me/instructor/occurrences/:id/attendance：本节课出勤名单
    *（已确认 / 待确认 / 未到，含补课学员）。
    */

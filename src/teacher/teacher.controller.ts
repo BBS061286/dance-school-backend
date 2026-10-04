@@ -70,6 +70,15 @@ export class TeacherController {
   }
 
   @Roles(UserRole.INSTRUCTOR)
+  @Get('me/instructor/sessions/:id/attendance-summary')
+  attendanceSummary(
+    @Request() req: { user: RequestUser },
+    @Param('id') id: string,
+  ) {
+    return this.teacher.attendanceSummary(req.user.id, id);
+  }
+
+  @Roles(UserRole.INSTRUCTOR)
   @Get('me/instructor/occurrences/:id/attendance')
   attendance(
     @Request() req: { user: RequestUser },
