@@ -429,6 +429,10 @@ model Course {
   // 学期：课程归属学期（如 2025年秋季），用于按学期查缴款记录
   termId         String?
   term           Term?            @relation(fields: [termId], references: [id], onDelete: SetNull)
+  // 加练来源大班：私教加练课关联的来源 GROUP 课程（可空）
+  sourceCourseId String?
+  sourceCourse   Course?          @relation("CourseSource", fields: [sourceCourseId], references: [id], onDelete: SetNull)
+  derivedCourses Course[]         @relation("CourseSource")
 }
 
 // ---------------------------- 2.6b Term ------------------------------------

@@ -68,6 +68,11 @@ export class CreateCourseDto {
   @IsUUID('4', { message: 'term_id 必须是合法的 UUID' })
   term_id?: string;
 
+  /** 加练来源大班 id（可选）：私教加练课关联的来源 GROUP 课程 */
+  @IsOptional()
+  @IsUUID('4', { message: 'source_course_id 必须是合法的 UUID' })
+  source_course_id?: string;
+
   @IsOptional()
   @IsString({ message: 'address 必须是字符串' })
   address?: string;

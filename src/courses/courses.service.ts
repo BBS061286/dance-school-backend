@@ -91,6 +91,7 @@ export class CoursesService {
           address: dto.address,
           capacity,
           termId: dto.term_id,
+          sourceCourseId: dto.source_course_id,
           status: dto.status ?? 'DRAFT',
         },
       });
