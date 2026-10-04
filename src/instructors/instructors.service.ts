@@ -94,7 +94,7 @@ export class InstructorsService {
         defaultCampus: { select: { id: true, name: true } },
         classSessions: {
           include: {
-            course: { select: { id: true, title: true, format: true } },
+            course: { select: { id: true, title: true, format: true, term: { select: { id: true, name: true } } } },
             campus: { select: { id: true, name: true } },
             enrollments: {
               where: { status: { in: ['CONFIRMED', 'PENDING_PAYMENT'] } },
