@@ -304,8 +304,8 @@ export class InstructorsService {
       });
       if (!campus) throw new NotFoundException('校区不存在');
     }
-    // 同步更新关联 User 的姓名/电话/状态
-    if (dto.name !== undefined || dto.phone !== undefined || dto.isActive !== undefined) {
+    // 同步更新关联 User 的姓名/电话/邮箱/状态
+    if (dto.name !== undefined || dto.phone !== undefined || dto.email !== undefined || dto.isActive !== undefined) {
       const inst = await this.prisma.instructor.findUnique({
         where: { id },
         select: { userId: true },
@@ -316,6 +316,7 @@ export class InstructorsService {
           data: {
             ...(dto.name !== undefined ? { name: dto.name } : {}),
             ...(dto.phone !== undefined ? { phone: dto.phone || null } : {}),
+            ...(dto.email !== undefined ? { email: dto.email } : {}),
             ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
           },
         });

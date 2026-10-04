@@ -18,6 +18,10 @@ export class UpdateInstructorDto {
   phone?: string;
 
   @IsOptional()
+  @IsEmail({}, { message: '邮箱格式不正确' })
+  email?: string;
+
+  @IsOptional()
   isActive?: boolean;
 
   @IsOptional()
@@ -62,6 +66,7 @@ export class CreateInstructorDto {
   @IsOptional()
   @IsString({ message: '电话必须是字符串' })
   phone?: string;
+
 
   @IsOptional()
   isActive?: boolean;
