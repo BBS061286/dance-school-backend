@@ -302,6 +302,7 @@ model User {
   courseReviews       CourseReview[]
   studentReviews      StudentReview[]
   documentsCreated    Document[]           @relation("DocumentCreator")
+  documentSends       DocumentSend[]       @relation("DocumentSendCreator")
   messageThreads      MessageThread[]      @relation("ThreadParticipant")
   messagesSent        Message[]            @relation("MessageSender")
   notifications       Notification[]
@@ -358,6 +359,7 @@ model Student {
   extraLessonRequests ExtraLessonRequest[]
   studentReviews     StudentReview[]
   documentSignatures DocumentSignature[]
+  documentSendRecipients DocumentSendRecipient[]
 }
 
 // ------------------------ 2.4 ParentStudentLink ------------------------------
@@ -929,12 +931,18 @@ model Message {
 
 // ---------------- 6.24 Document / DocumentSignature --------------------------
 
+enum DocumentStatus {
+  LIBRARY
+  ACTIVE
+}
+
 model Document {
   id                    String           @id @default(uuid())
   title                 String
   fileUrl               String
   requiresSignature     Boolean          @default(true)
   audience              DocumentAudience @default(ALL)
+  status                DocumentStatus   @default(ACTIVE)
   version               Int              @default(1)
   supersedesDocumentId  String?          @unique
   supersedes            Document?        @relation("VersionChain", fields: [supersedesDocumentId], references: [id])
@@ -945,6 +953,7 @@ model Document {
   createdAt             DateTime         @default(now())
 
   signatures DocumentSignature[]
+  sends      DocumentSend[]
 }
 
 model DocumentSignature {
@@ -960,6 +969,30 @@ model DocumentSignature {
   signedAt        DateTime @default(now())
 
   @@unique([documentId, studentId]) // 同一版本同一学员只签一次
+}
+
+// ------------------------- 定向发送 -------------------------
+
+model DocumentSend {
+  id          String                @id @default(uuid())
+  documentId  String
+  document    Document              @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  createdById String
+  createdBy   User                  @relation("DocumentSendCreator", fields: [createdById], references: [id])
+  note        String?
+  createdAt   DateTime              @default(now())
+  recipients  DocumentSendRecipient[]
+}
+
+model DocumentSendRecipient {
+  id        String       @id @default(uuid())
+  sendId    String
+  send      DocumentSend @relation(fields: [sendId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  sentAt    DateTime     @default(now())
+
+  @@unique([sendId, studentId])
 }
 
 // ------------------------- 6.28 Notification ---------------------------------

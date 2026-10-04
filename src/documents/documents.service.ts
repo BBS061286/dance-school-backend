@@ -8,6 +8,7 @@ import {
 import {
   Document,
   DocumentAudience,
+  DocumentStatus,
   NotificationSourceType,
   NotificationType,
   UserRole,
@@ -42,6 +43,7 @@ export class DocumentsService {
         fileUrl: `uploads/${filename}`,
         requiresSignature: dto.requires_signature ?? true,
         audience: dto.audience ?? DocumentAudience.ALL,
+        status: dto.save_to_library ? DocumentStatus.LIBRARY : DocumentStatus.ACTIVE,
         version: 1,
         createdById: adminId,
       },
@@ -103,11 +105,127 @@ export class DocumentsService {
   async list() {
     return this.prisma.document.findMany({
       include: {
-        _count: { select: { signatures: true } },
+        _count: { select: { signatures: true, sends: true } },
         createdBy: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  /**
+   * POST /admin/documents/:id/send：定向发送签署请求。
+   * student_ids 去重；已有该文档签名的跳过；发通知给学员家长/本人。
+   */
+  async sendDocument(
+    adminId: string,
+    docId: string,
+    studentIds: string[],
+    note?: string,
+  ) {
+    const doc = await this.prisma.document.findUnique({
+      where: { id: docId },
+    });
+    if (!doc) throw new NotFoundException('文件不存在');
+    if (!doc.requiresSignature) {
+      throw new BadRequestException('该文件无需签署');
+    }
+    const uniqueIds = [...new Set((studentIds ?? []).filter(Boolean))];
+    if (uniqueIds.length === 0) {
+      throw new BadRequestException('请选择至少一名学员');
+    }
+    // 已签过当前版本的跳过
+    const signed = await this.prisma.documentSignature.findMany({
+      where: { documentId: docId, studentId: { in: uniqueIds } },
+      select: { studentId: true },
+    });
+    const signedSet = new Set(signed.map((x) => x.studentId));
+    const targets = uniqueIds.filter((id) => !signedSet.has(id));
+    if (targets.length === 0) {
+      throw new BadRequestException('所选学员均已签署，无需重复发送');
+    }
+    const send = await this.prisma.documentSend.create({
+      data: {
+        documentId: docId,
+        createdById: adminId,
+        note: note?.trim() || null,
+        recipients: {
+          create: targets.map((studentId) => ({ studentId })),
+        },
+      },
+      include: { recipients: true },
+    });
+    // 文件出库：LIBRARY -> ACTIVE
+    if (doc.status !== 'ACTIVE') {
+      await this.prisma.document.update({
+        where: { id: docId },
+        data: { status: 'ACTIVE' },
+      });
+    }
+    // 通知
+    const seen = new Set<string>();
+    for (const studentId of targets) {
+      const recipientIds = await resolveStudentRecipientUserIds(
+        this.prisma,
+        studentId,
+      );
+      for (const userId of recipientIds) {
+        if (seen.has(userId)) continue;
+        seen.add(userId);
+        try {
+          await this.notifications.notify({
+            userId,
+            type: NotificationType.DOCUMENT_SIGN_REQUEST,
+            title: '有文件需要签署',
+            body: `《${doc.title}》需要签署${note?.trim() ? `（${note.trim()}）` : ''}，请及时处理。`,
+            sourceType: NotificationSourceType.DOCUMENT,
+            sourceId: doc.id,
+          });
+        } catch {
+          /* 通知失败不影响发送 */
+        }
+      }
+    }
+    return {
+      sendId: send.id,
+      sent: targets.length,
+      skipped: uniqueIds.length - targets.length,
+    };
+  }
+
+  /** GET /admin/documents/:id/sends：发送记录 + 每人签署状态 */
+  async sends(docId: string) {
+    const doc = await this.prisma.document.findUnique({
+      where: { id: docId },
+      select: { id: true, title: true },
+    });
+    if (!doc) throw new NotFoundException('文件不存在');
+    const sends = await this.prisma.documentSend.findMany({
+      where: { documentId: docId },
+      include: {
+        createdBy: { select: { id: true, name: true } },
+        recipients: {
+          include: { student: { select: { id: true, name: true } } },
+          orderBy: { sentAt: 'asc' },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    const signed = await this.prisma.documentSignature.findMany({
+      where: { documentId: docId },
+      select: { studentId: true, signedAt: true },
+    });
+    const signedMap = new Map(signed.map((x) => [x.studentId, x.signedAt]));
+    return sends.map((sd) => ({
+      id: sd.id,
+      note: sd.note,
+      createdAt: sd.createdAt,
+      createdBy: sd.createdBy,
+      recipients: sd.recipients.map((r) => ({
+        student: r.student,
+        sentAt: r.sentAt,
+        signedAt: signedMap.get(r.student.id) ?? null,
+      })),
+    }));
   }
 
   /**
@@ -176,29 +294,59 @@ export class DocumentsService {
       where: { parentId: userId },
       include: { student: { select: { id: true, name: true } } },
     });
+    const studentIds = links.map((l) => l.studentId);
+    // 定向发送的（未签）
+    const targeted = studentIds.length
+      ? await this.prisma.documentSendRecipient.findMany({
+          where: { studentId: { in: studentIds } },
+          include: {
+            send: {
+              include: {
+                document: {
+                  include: { supersededBy: { select: { id: true } } },
+                },
+              },
+            },
+            student: { select: { id: true, name: true } },
+          },
+        })
+      : [];
+    const signedDocIds = await this.prisma.documentSignature.findMany({
+      where: { studentId: { in: studentIds } },
+      select: { documentId: true, studentId: true },
+    });
+    const signedSet = new Set(
+      signedDocIds.map((x) => `${x.documentId}:${x.studentId}`),
+    );
+    const pending: { student: { id: string; name: string }; document: Document; sendNote?: string | null }[] = [];
+    const seen = new Set<string>();
+    for (const r of targeted) {
+      const doc = r.send.document;
+      if (!doc || doc.supersededBy !== null || !doc.requiresSignature) continue;
+      const key = `${doc.id}:${r.studentId}`;
+      if (signedSet.has(key) || seen.has(key)) continue;
+      seen.add(key);
+      pending.push({
+        student: r.student,
+        document: doc,
+        sendNote: r.send.note,
+      });
+    }
+    // audience 广播的（仅 ACTIVE）
     const docs = await this.prisma.document.findMany({
-      where: { supersededBy: null, requiresSignature: true },
+      where: { supersededBy: null, requiresSignature: true, status: 'ACTIVE' },
       orderBy: { createdAt: 'desc' },
     });
-    const pending: { student: { id: string; name: string }; document: Document }[] =
-      [];
     for (const link of links) {
       const isAdult = link.relationship === 'SELF';
       for (const doc of docs) {
+        const key = `${doc.id}:${link.studentId}`;
+        if (seen.has(key)) continue;
         if (doc.audience !== DocumentAudience.ALL) {
           const forYouth = doc.audience === DocumentAudience.YOUTH;
           if (forYouth === isAdult) continue;
         }
-        const signed = await this.prisma.documentSignature.findUnique({
-          where: {
-            documentId_studentId: {
-              documentId: doc.id,
-              studentId: link.studentId,
-            },
-          },
-          select: { id: true },
-        });
-        if (signed) continue;
+        if (signedSet.has(key)) continue;
         if (doc.supersedesDocumentId && !doc.requiresResignOnUpdate) {
           const oldSigned = await this.prisma.documentSignature.findUnique({
             where: {
@@ -211,6 +359,7 @@ export class DocumentsService {
           });
           if (oldSigned) continue; // 旧签名继续有效
         }
+        seen.add(key);
         pending.push({ student: link.student, document: doc });
       }
     }

@@ -7,7 +7,7 @@ import {
   IsString,
   IsUUID,
 } from 'class-validator';
-import { DocumentAudience } from '@prisma/client';
+import { DocumentAudience, DocumentStatus } from '@prisma/client';
 
 /** 上传文件：{ title, requires_signature, audience } + file（§6.24） */
 export class CreateDocumentDto {
@@ -23,6 +23,11 @@ export class CreateDocumentDto {
   @IsOptional()
   @IsEnum(DocumentAudience, { message: 'audience 必须是 ALL/YOUTH/ADULT' })
   audience?: DocumentAudience;
+
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean({ message: 'save_to_library 必须是布尔值' })
+  save_to_library?: boolean;
 }
 
 /** 电子签署：{ student_id, signature_image }（§6.26） */

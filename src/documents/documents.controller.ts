@@ -10,6 +10,7 @@ import {
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
+import { IsOptional } from 'class-validator';
 import { UserRole } from '@prisma/client';
 import { IsUUID } from 'class-validator';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -24,6 +25,14 @@ import { CreateDocumentDto, SignDocumentDto } from './dto/document.dto';
 class SignatureQueryDto {
   @IsUUID('4', { message: 'student_id 必须是合法的 UUID' })
   student_id: string;
+}
+
+class SendDocumentDto {
+  @IsUUID('4', { each: true, message: 'student_ids 必须是合法的 UUID 数组' })
+  student_ids: string[];
+
+  @IsOptional()
+  note?: string;
 }
 
 /** 文件上传与电子签署路由（§6.24/6.26）。全局前缀 /api/v1 在 main.ts 设置。 */
@@ -69,6 +78,29 @@ export class DocumentsController {
   @Get('admin/documents/:id/signatures')
   signatures(@Param('id') id: string) {
     return this.documents.signatures(id);
+  }
+
+  /** 定向发送签署：POST /admin/documents/:id/send（ADMIN） */
+  @Roles(UserRole.ADMIN)
+  @Post('admin/documents/:id/send')
+  send(
+    @Request() req: { user: RequestUser },
+    @Param('id') id: string,
+    @Body() dto: SendDocumentDto,
+  ) {
+    return this.documents.sendDocument(
+      req.user.id,
+      id,
+      dto.student_ids ?? [],
+      dto.note,
+    );
+  }
+
+  /** 发送记录：GET /admin/documents/:id/sends（ADMIN） */
+  @Roles(UserRole.ADMIN)
+  @Get('admin/documents/:id/sends')
+  sends(@Param('id') id: string) {
+    return this.documents.sends(id);
   }
 
   /** 待我/孩子签署的文件：GET /me/documents */
