@@ -1,6 +1,7 @@
 import {
   IsBoolean,
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -72,6 +73,17 @@ export class CreateEventDto {
   @IsInt()
   @Min(1)
   max_tickets_per_registration?: number;
+
+  /** 比赛报名费（分）。仅 COMPETITION 生效 */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  participation_fee_cents?: number;
+
+  /** 收费模式：PER_PERSON=按人收全额，SPLIT=总费用按组均摊 */
+  @IsOptional()
+  @IsIn(['PER_PERSON', 'SPLIT'])
+  fee_mode?: string;
 }
 
 /** 报名活动/比赛：{ ticket_quantity? } */
@@ -88,7 +100,7 @@ export class RegisterEventDto {
   student_id?: string;
 }
 
-/** 管理员代报名活动/比赛：{ student_id, ticket_quantity? } */
+/** 管理员代报名活动/比赛：{ student_id, ticket_quantity?, group_key? } */
 export class AdminRegisterEventDto {
   @IsUUID('4')
   student_id: string;
@@ -97,6 +109,11 @@ export class AdminRegisterEventDto {
   @IsInt()
   @Min(1)
   ticket_quantity?: number;
+
+  /** SPLIT 均摊模式下指定加入的组；不传则自动新建一组 */
+  @IsOptional()
+  @IsString()
+  group_key?: string;
 }
 
 /** 管理员发放参赛/参与费用 */

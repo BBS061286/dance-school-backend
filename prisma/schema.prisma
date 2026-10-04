@@ -587,6 +587,9 @@ model Event {
   requiresTicket      Boolean       @default(false)
   ticketPriceCents    Int?
   maxTicketsPerRegistration Int?
+  // 比赛报名费：PER_PERSON=按人收全额，SPLIT=总费用按组均摊
+  participationFeeCents Int?
+  feeMode             String?
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
 
@@ -608,6 +611,8 @@ model EventRegistration {
   ticketQuantity     Int?
   ticketTotalCents   Int?
   participationFeeCents Int?
+  // SPLIT 均摊模式下同组报名共享一个 groupKey
+  groupKey           String?
   feeStatus          FeeStatus        @default(NOT_SET)
   // v2 R8e：删除 orderId；改用 EventRegistrationOrder 关联表（门票款与参赛费可拆单）
   createdAt          DateTime         @default(now())

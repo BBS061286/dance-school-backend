@@ -14,6 +14,7 @@ import {
 import { BillingService } from '../billing/billing.service';
 import { RequestUser } from '../common/types';
 import { PrismaService } from '../prisma/prisma.service';
+import { randomUUID } from 'crypto';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
   AdminRegisterEventDto,
@@ -68,6 +69,8 @@ export class EventsService {
         requiresTicket: dto.requires_ticket ?? false,
         ticketPriceCents: dto.ticket_price_cents ?? null,
         maxTicketsPerRegistration: dto.max_tickets_per_registration ?? null,
+        participationFeeCents: dto.participation_fee_cents ?? null,
+        feeMode: dto.fee_mode ?? null,
       },
     });
   }
@@ -282,6 +285,40 @@ export class EventsService {
 
     if (event.requiresTicket && (ticketTotalCents ?? 0) > 0) {
       await this.createTicketOrder(parentId, registration.id, ticketTotalCents!);
+    }
+
+    // 比赛报名费自动计算（feeStatus 保持 NOT_SET，缴费走 issue-fee/pay 流程）
+    if (event.participationFeeCents != null && event.participationFeeCents > 0) {
+      if (event.feeMode === 'SPLIT') {
+        // SPLIT：同 eventId + 同 groupKey 为一组，总费用均摊（向上取整）；
+        // 新成员加入后重算全组每人费用
+        const groupKey = dto.group_key ?? randomUUID();
+        await this.prisma.eventRegistration.update({
+          where: { id: registration.id },
+          data: { groupKey },
+        });
+        const members = await this.prisma.eventRegistration.findMany({
+          where: {
+            eventId,
+            groupKey,
+            status: { in: ['REGISTERED', 'WAITLISTED'] },
+          },
+          select: { id: true },
+        });
+        const perPerson = Math.ceil(
+          event.participationFeeCents / Math.max(1, members.length),
+        );
+        await this.prisma.eventRegistration.updateMany({
+          where: { id: { in: members.map((m) => m.id) } },
+          data: { participationFeeCents: perPerson },
+        });
+      } else {
+        // PER_PERSON（默认）：每人交全额
+        await this.prisma.eventRegistration.update({
+          where: { id: registration.id },
+          data: { participationFeeCents: event.participationFeeCents },
+        });
+      }
     }
 
     // 通知家长（失败不影响报名）
