@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { CoursesController } from './courses.controller';
 import { CoursesService } from './courses.service';
+import { TermArchiveService } from './term-archive.service';
 
 /**
  * 课程管理模块（§6.27，D5 新增）。
@@ -10,7 +11,7 @@ import { CoursesService } from './courses.service';
 @Module({
   imports: [NotificationsModule],
   controllers: [CoursesController],
-  providers: [CoursesService],
-  exports: [CoursesService],
+  providers: [CoursesService, TermArchiveService],
+  exports: [CoursesService, TermArchiveService],
 })
 export class CoursesModule {}

@@ -4,6 +4,7 @@ import { PaymentTimeoutService } from './reminders/payment-timeout.service';
 import { redisConnection } from './reminders/redis';
 import { RemindersService } from './reminders/reminders.service';
 import { SeatReconcileService } from './reminders/seat-reconcile.service';
+import { TermArchiveService } from './courses/term-archive.service';
 
 /**
  * 独立 worker 进程的任务调度器（设计文档 §五）：
@@ -20,6 +21,7 @@ export class WorkerSchedulerService implements OnModuleInit, OnModuleDestroy {
     private readonly remindersService: RemindersService,
     private readonly paymentTimeoutService: PaymentTimeoutService,
     private readonly seatReconcileService: SeatReconcileService,
+    private readonly termArchiveService: TermArchiveService,
   ) {}
 
   async onModuleInit() {
@@ -51,6 +53,14 @@ export class WorkerSchedulerService implements OnModuleInit, OnModuleDestroy {
       {},
       { override: true },
     );
+    await this.scheduler.upsertJobScheduler(
+      'term-archive',
+      { pattern: '0 4 * * *' },
+      'term-archive',
+      {},
+      {},
+      { override: true },
+    );
 
     this.worker = new Worker('dance-tasks', (job) => this.dispatch(job), {
       connection: redisConnection(),
@@ -69,6 +79,9 @@ export class WorkerSchedulerService implements OnModuleInit, OnModuleDestroy {
         return;
       case 'seat-reconcile':
         await this.seatReconcileService.reconcileSeats();
+        return;
+      case 'term-archive':
+        await this.termArchiveService.archiveEndedTerms();
         return;
       default:
         // eslint-disable-next-line no-console

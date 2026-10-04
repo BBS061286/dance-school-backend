@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { CoursesModule } from './courses/courses.module';
 import { EnrollmentsModule } from './enrollments/enrollments.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { NotificationsModule } from './notifications/notifications.module';
@@ -20,6 +21,7 @@ import { WorkerSchedulerService } from './worker-scheduler.service';
     RemindersModule,
     EnrollmentsModule,
     NotificationsModule,
+    CoursesModule,
   ],
   providers: [WorkerSchedulerService],
 })
