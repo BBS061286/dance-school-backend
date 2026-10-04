@@ -32,9 +32,9 @@ export class CoursesService {
   async create(dto: CreateCourseDto) {
     let capacity = dto.capacity;
     if (dto.format === CourseFormat.PRIVATE) {
-      // 私教课名额不再强制为 1：支持 1v1 / 1v3 等小班私教（1-8 人）
-      if (capacity < 1 || capacity > 8) {
-        throw new BadRequestException('私教课名额为 1-8 人');
+      // 私教课名额不设上限：1v1 / 1v多 / 大班加练均可，仅要求至少 1 人
+      if (capacity < 1) {
+        throw new BadRequestException('私教课名额至少为 1 人');
       }
       if (
         dto.pricing_type !== PricingType.PER_SESSION &&
