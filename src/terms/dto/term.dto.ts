@@ -1,4 +1,4 @@
-import { IsBoolean, IsDateString, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsDateString, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 
 /** 新建学期（管理端） */
 export class CreateTermDto {
@@ -31,4 +31,9 @@ export class UpdateTermDto {
   @IsOptional()
   @IsBoolean({ message: 'isActive 必须是布尔值' })
   isActive?: boolean;
+
+  @IsOptional()
+  @IsInt({ message: 'makeupQuota 必须是整数' })
+  @Min(0, { message: 'makeupQuota 不能为负数' })
+  makeupQuota?: number;
 }

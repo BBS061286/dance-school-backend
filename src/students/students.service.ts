@@ -10,6 +10,7 @@ export interface SearchStudentsQuery {
   campus?: string;
   weekday?: number;
   q?: string;
+  term?: string;
 }
 
 /**
@@ -31,14 +32,17 @@ export class StudentsService {
       // 成人端：学员自己绑定自己（SELF）
       where.parentLinks = { some: { relationship: 'SELF' } };
     }
-    if (query.campus || query.weekday !== undefined) {
+    if (query.campus || query.weekday !== undefined || query.term) {
       where.enrollments = {
         some: {
           classSession: {
             ...(query.campus ? { campusId: query.campus } : {}),
-            ...(query.weekday !== undefined
-              ? { course: { weekdays: { has: query.weekday } } }
-              : {}),
+            course: {
+              ...(query.weekday !== undefined
+                ? { weekdays: { has: query.weekday } }
+                : {}),
+              ...(query.term ? { termId: query.term } : {}),
+            },
           },
         },
       };

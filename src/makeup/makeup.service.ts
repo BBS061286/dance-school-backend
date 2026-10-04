@@ -152,6 +152,54 @@ export class MakeupService {
       throw new ForbiddenException('该场次不在本班级的补课资格范围内');
     }
 
+    // 学期补课次数检查：该报名所在学期已用次数 < 学期 quota
+    const enrollmentFull = await this.prisma.enrollment.findUnique({
+      where: { id: enrollment.id },
+      include: {
+        classSession: { include: { course: { include: { term: true } } } },
+      },
+    });
+    const term = enrollmentFull?.classSession.course.term;
+    if (term) {
+      const used = await this.prisma.makeupBooking.count({
+        where: {
+          enrollment: {
+            studentId: enrollment.studentId,
+            classSession: { course: { termId: term.id } },
+          },
+          status: { in: ['BOOKED', 'ATTENDED'] },
+        },
+      });
+      if (used >= term.makeupQuota) {
+        throw new ForbiddenException(
+          `本学期补课次数已用完（${used}/${term.makeupQuota}）`,
+        );
+      }
+      // 补课目标必须在学期日期范围内
+      const makeupDate = new Date(makeup.date);
+      makeupDate.setHours(0, 0, 0, 0);
+      const termStart = new Date(term.startDate);
+      termStart.setHours(0, 0, 0, 0);
+      const termEnd = new Date(term.endDate);
+      termEnd.setHours(23, 59, 59, 999);
+      if (makeupDate < termStart || makeupDate > termEnd) {
+        throw new BadRequestException(
+          `补课日期须在学期范围内（${term.name}：${term.startDate.toISOString().slice(0, 10)} ~ ${term.endDate.toISOString().slice(0, 10)}）`,
+        );
+      }
+    }
+
+    // 补课场次必须还没上（日期 >= 今天）
+    {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const makeupDate = new Date(makeup.date);
+      makeupDate.setHours(0, 0, 0, 0);
+      if (makeupDate < today) {
+        throw new BadRequestException('只能预约尚未上课的场次进行补课');
+      }
+    }
+
     // 同一报名同一补课场次已有有效预约时，幂等返回
     const existing = await this.prisma.makeupBooking.findFirst({
       where: {
@@ -170,6 +218,38 @@ export class MakeupService {
         status: 'BOOKED',
       },
     });
+  }
+
+  /**
+   * 查询某报名的学期补课剩余额度：{ term, quota, used, remaining }。
+   */
+  async makeupQuota(user: RequestUser, enrollmentId: string) {
+    const enrollment = await this.assertEnrollmentAccessible(user, enrollmentId);
+    const full = await this.prisma.enrollment.findUnique({
+      where: { id: enrollment.id },
+      include: {
+        classSession: { include: { course: { include: { term: true } } } },
+      },
+    });
+    const term = full?.classSession.course.term;
+    if (!term) {
+      return { term: null, quota: 0, used: 0, remaining: 0 };
+    }
+    const used = await this.prisma.makeupBooking.count({
+      where: {
+        enrollment: {
+          studentId: enrollment.studentId,
+          classSession: { course: { termId: term.id } },
+        },
+        status: { in: ['BOOKED', 'ATTENDED'] },
+      },
+    });
+    return {
+      term: { id: term.id, name: term.name },
+      quota: term.makeupQuota,
+      used,
+      remaining: Math.max(0, term.makeupQuota - used),
+    };
   }
 
   // ---------------------------------------------------------------- 内部工具

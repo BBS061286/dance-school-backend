@@ -32,6 +32,10 @@ class SearchStudentsQueryDto {
   @IsOptional()
   @IsString({ message: 'q 必须是字符串' })
   q?: string;
+
+  @IsOptional()
+  @IsString({ message: 'term 必须是学期 ID' })
+  term?: string;
 }
 
 /** 学员查询路由（§6.12，ADMIN）。全局前缀 /api/v1 在 main.ts 设置。 */

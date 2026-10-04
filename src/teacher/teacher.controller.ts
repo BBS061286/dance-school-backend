@@ -66,7 +66,7 @@ export class TeacherController {
     @Param('id') id: string,
     @Body() dto: InstructorCheckInDto,
   ) {
-    return this.teacher.checkIn(req.user.id, id, dto.enrollment_id);
+    return this.teacher.checkIn(req.user.id, id, dto.enrollment_id, dto.status);
   }
 
   @Roles(UserRole.INSTRUCTOR)

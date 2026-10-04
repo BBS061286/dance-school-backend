@@ -4,6 +4,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { RequestUser } from '../common/types';
 import { AttendanceService } from './attendance.service';
 import {
+  AdminInstructorCheckInDto,
   CancelOccurrenceDto,
   CheckInDto,
   InstructorCheckInDto,
@@ -64,6 +65,13 @@ export class AttendanceController {
     @Body() dto: CheckInDto,
   ) {
     return this.attendance.adminCheckIn(req.user, id, dto);
+  }
+
+  /** 管理员替老师打卡（ADMIN） */
+  @Roles(UserRole.ADMIN)
+  @Post('admin/instructor-checkins')
+  adminInstructorCheckIn(@Body() dto: AdminInstructorCheckInDto) {
+    return this.attendance.adminInstructorCheckIn(dto);
   }
 
   /** 管理员确认待确认打卡（ADMIN） */

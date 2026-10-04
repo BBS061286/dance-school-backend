@@ -196,6 +196,7 @@ enum CheckInMethod {
 enum AttendanceStatus {
   PENDING_CONFIRMATION
   CONFIRMED
+  ABSENT // 缺席（管理员/教师/学员本人可标记）
 }
 
 enum MakeupBookingStatus {
@@ -440,15 +441,16 @@ model Course {
 // 学期（如 2025年秋季 / 2026年春季）：管理员先设定学期，再建课程时关联；
 // 订单按学期筛选，支持查历史学期的缴款记录。
 model Term {
-  id        String   @id @default(uuid())
-  name      String   // 如 2025年秋季
-  startDate DateTime @db.Date
-  endDate   DateTime @db.Date
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(uuid())
+  name       String   // 如 2025年秋季
+  startDate  DateTime @db.Date
+  endDate    DateTime @db.Date
+  isActive   Boolean  @default(true)
+  makeupQuota Int     @default(2) // 每学期可补课次数（管理员可改）
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  courses   Course[]
+  courses    Course[]
 }
 
 // ------------------- 2.7 CourseCampus / 2.8 CourseInstructor -----------------

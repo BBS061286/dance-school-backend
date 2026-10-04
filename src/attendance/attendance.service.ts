@@ -226,11 +226,22 @@ export class AttendanceService {
             _max: { sessionNumber: true },
           }))._max.sessionNumber ?? 0;
 
-        const newDate = this.nextWeekdayDate(
-          last ? new Date(last.date) : new Date(occurrence.date),
-          course.weekdays,
-          new Date(occurrence.date).getUTCDay(),
-        );
+        // 手动指定延期日期优先；否则自动顺延到下一个同星期日
+        let newDate: Date;
+        if (dto.postpone_date) {
+          newDate = new Date(dto.postpone_date);
+          if (Number.isNaN(newDate.getTime())) {
+            throw new BadRequestException(
+              `延期日期格式非法：${dto.postpone_date}`,
+            );
+          }
+        } else {
+          newDate = this.nextWeekdayDate(
+            last ? new Date(last.date) : new Date(occurrence.date),
+            course.weekdays,
+            new Date(occurrence.date).getUTCDay(),
+          );
+        }
         const created = await tx.sessionOccurrence.create({
           data: {
             classSessionId: classSession.id,
@@ -352,7 +363,13 @@ export class AttendanceService {
       occurrenceId,
       dto.enrollment_id,
     );
-    return this.doSelfCheckIn(user, occurrence, enrollment, dto.signature);
+    return this.doSelfCheckIn(
+      user,
+      occurrence,
+      enrollment,
+      dto.signature,
+      dto.status,
+    );
   }
 
   /**
@@ -364,6 +381,7 @@ export class AttendanceService {
     occurrence: { id: string },
     enrollment: { id: string; studentId: string },
     signature?: string,
+    status?: 'PRESENT' | 'ABSENT',
   ) {
     await this.assertEnrollmentBelongsToUser(user, enrollment.studentId);
 
@@ -377,16 +395,20 @@ export class AttendanceService {
     });
     if (existing) return existing; // 幂等：直接返回已有记录
 
+    const isAbsent = status === 'ABSENT';
     const record = await this.prisma.attendanceRecord.create({
       data: {
         sessionOccurrenceId: occurrence.id,
         enrollmentId: enrollment.id,
         checkInMethod: 'SELF',
-        status: 'PENDING_CONFIRMATION',
+        status: isAbsent ? 'ABSENT' : 'PENDING_CONFIRMATION',
         signatureUrl: signature ?? null,
       },
     });
-    await this.applyMakeupOnCheckIn(enrollment.id, occurrence.id, record.id);
+    // 缺席不触发补课抵扣逻辑
+    if (!isAbsent) {
+      await this.applyMakeupOnCheckIn(enrollment.id, occurrence.id, record.id);
+    }
     return record;
   }
 
@@ -486,13 +508,14 @@ export class AttendanceService {
       },
     });
 
+    const targetStatus = dto.status === 'ABSENT' ? 'ABSENT' : 'CONFIRMED';
     let record;
     if (existing) {
-      // 已有待确认记录 → 更新为 CONFIRMED，不新增
+      // 已有记录 → 更新状态，不新增
       record = await this.prisma.attendanceRecord.update({
         where: { id: existing.id },
         data: {
-          status: 'CONFIRMED',
+          status: targetStatus,
           checkInMethod: 'ADMIN',
           confirmedById: admin.id,
           confirmedAt: new Date(),
@@ -504,13 +527,15 @@ export class AttendanceService {
           sessionOccurrenceId: occurrence.id,
           enrollmentId: enrollment.id,
           checkInMethod: 'ADMIN',
-          status: 'CONFIRMED',
+          status: targetStatus,
           confirmedById: admin.id,
           confirmedAt: new Date(),
         },
       });
     }
-    await this.applyMakeupOnCheckIn(enrollment.id, occurrence.id, record.id);
+    if (targetStatus === 'CONFIRMED') {
+      await this.applyMakeupOnCheckIn(enrollment.id, occurrence.id, record.id);
+    }
     return record;
   }
 
@@ -534,6 +559,38 @@ export class AttendanceService {
       await this.markMakeupAttended(tx, confirmed.id);
     });
     return confirmed;
+  }
+
+  /**
+   * 管理员替老师打卡：直接创建 InstructorCheckin 记录。
+   */
+  async adminInstructorCheckIn(dto: {
+    instructor_id: string;
+    class_session_id?: string;
+    session_occurrence_id?: string;
+    date: string;
+    time: string;
+    campus: string;
+  }) {
+    const instructor = await this.prisma.instructor.findUnique({
+      where: { id: dto.instructor_id },
+    });
+    if (!instructor) throw new NotFoundException(`教师不存在：${dto.instructor_id}`);
+    const date = new Date(dto.date);
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException(`日期格式非法：${dto.date}`);
+    }
+    return this.prisma.instructorCheckin.create({
+      data: {
+        instructorId: instructor.id,
+        classSessionId: dto.class_session_id ?? null,
+        sessionOccurrenceId: dto.session_occurrence_id ?? null,
+        campus: dto.campus,
+        date,
+        time: dto.time,
+      },
+      include: { instructor: { include: { user: { select: { name: true } } } } },
+    });
   }
 
   // ---------------------------------------------------------------- 教师打卡（§6.18）

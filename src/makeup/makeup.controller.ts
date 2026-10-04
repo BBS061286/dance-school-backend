@@ -38,6 +38,16 @@ export class MakeupController {
     return this.makeup.makeupOptions(req.user, id);
   }
 
+  /** 查询某报名的学期补课剩余额度 */
+  @Roles(UserRole.PARENT, UserRole.ADULT_STUDENT, UserRole.ADMIN)
+  @Get('me/enrollments/:id/makeup-quota')
+  makeupQuota(
+    @Request() req: { user: RequestUser },
+    @Param('id') id: string,
+  ) {
+    return this.makeup.makeupQuota(req.user, id);
+  }
+
   /** 预约补课：{ enrollment_id, missed_occurrence_id?, makeup_occurrence_id } */
   @Roles(UserRole.PARENT, UserRole.ADULT_STUDENT, UserRole.ADMIN)
   @Post('makeup-bookings')

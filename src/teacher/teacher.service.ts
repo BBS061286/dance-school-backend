@@ -120,7 +120,12 @@ export class TeacherService {
    * POST /me/instructor/occurrences/:id/check-in：教师点名。
    * 生成/更新 checkInMethod=INSTRUCTOR、status=CONFIRMED 的 AttendanceRecord。
    */
-  async checkIn(userId: string, occurrenceId: string, enrollmentId: string) {
+  async checkIn(
+    userId: string,
+    occurrenceId: string,
+    enrollmentId: string,
+    status?: 'PRESENT' | 'ABSENT',
+  ) {
     const instructor = await this.requireInstructor(userId);
     const occurrence = await this.requireOwnOccurrence(
       occurrenceId,
@@ -132,6 +137,8 @@ export class TeacherService {
     if (!enrollment || enrollment.classSessionId !== occurrence.classSessionId) {
       throw new BadRequestException('报名记录与本节课不匹配');
     }
+    const targetStatus =
+      status === 'ABSENT' ? AttendanceStatus.ABSENT : AttendanceStatus.CONFIRMED;
     return this.prisma.attendanceRecord.upsert({
       where: {
         sessionOccurrenceId_enrollmentId: {
@@ -141,7 +148,7 @@ export class TeacherService {
       },
       update: {
         checkInMethod: CheckInMethod.INSTRUCTOR,
-        status: AttendanceStatus.CONFIRMED,
+        status: targetStatus,
         confirmedById: userId,
         confirmedAt: new Date(),
       },
@@ -149,7 +156,7 @@ export class TeacherService {
         sessionOccurrenceId: occurrenceId,
         enrollmentId,
         checkInMethod: CheckInMethod.INSTRUCTOR,
-        status: AttendanceStatus.CONFIRMED,
+        status: targetStatus,
         confirmedById: userId,
         confirmedAt: new Date(),
       },
