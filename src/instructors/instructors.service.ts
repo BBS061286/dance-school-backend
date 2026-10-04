@@ -1,14 +1,22 @@
 import {
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import * as bcrypt from 'bcryptjs';
+import { randomBytes } from 'crypto';
 import {
   NotificationSourceType,
   NotificationType,
+  UserRole,
 } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { AssignInstructorDto, UpdateInstructorDto } from './dto/instructor.dto';
+import {
+  AssignInstructorDto,
+  CreateInstructorDto,
+  UpdateInstructorDto,
+} from './dto/instructor.dto';
 
 /**
  * 教师管理服务（§6.25，管理端统一管控）：
@@ -20,6 +28,44 @@ export class InstructorsService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
   ) {}
+
+  /**
+   * POST /admin/instructors：管理员手动添加教师。
+   * 同时创建 TEACHER 用户与 Instructor 档案，生成随机初始密码一次返回。
+   */
+  async create(dto: CreateInstructorDto) {
+    const exists = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
+    if (exists) throw new ConflictException('该邮箱已被注册');
+
+    const tempPassword = randomBytes(4).toString('hex');
+    const passwordHash = await bcrypt.hash(tempPassword, 10);
+
+    const instructor = await this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          email: dto.email,
+          name: dto.name,
+          phone: dto.phone,
+          role: UserRole.INSTRUCTOR,
+          passwordHash,
+        },
+      });
+      return tx.instructor.create({
+        data: {
+          userId: user.id,
+          bio: dto.bio,
+          specialties: dto.specialties ?? [],
+          defaultCampusId: dto.default_campus_id,
+        },
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+        },
+      });
+    });
+    return { ...instructor, tempPassword };
+  }
 
   /** GET /admin/instructors：教师列表（含头像、简介、任教班级数） */
   async list() {

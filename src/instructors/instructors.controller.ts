@@ -3,6 +3,7 @@ import { UserRole } from '@prisma/client';
 import { Roles } from '../auth/decorators/roles.decorator';
 import {
   AssignInstructorDto,
+  CreateInstructorDto,
   UpdateInstructorDto,
 } from './dto/instructor.dto';
 import { InstructorsService } from './instructors.service';
@@ -18,6 +19,12 @@ export class InstructorsController {
   @Get('instructors/browse')
   browseInstructors() {
     return this.instructors.browseInstructors();
+  }
+
+  /** 手动添加教师：POST /admin/instructors */
+  @Post('admin/instructors')
+  create(@Body() dto: CreateInstructorDto) {
+    return this.instructors.create(dto);
   }
 
   /** 教师列表：GET /admin/instructors */
