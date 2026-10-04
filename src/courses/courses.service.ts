@@ -131,7 +131,12 @@ export class CoursesService {
         status: 'PUBLISHED',
         ...(query.q ? { title: { contains: query.q, mode: 'insensitive' } } : {}),
         ...(query.format ? { format: query.format } : {}),
-        ...(query.audience ? { audience: query.audience } : {}),
+        // 适合对象筛选：选"少儿"/"成人"时，"不限"(ALL)的课程也符合（对所有人开放）
+        ...(query.audience === 'YOUTH' || query.audience === 'ADULT'
+          ? { audience: { in: [query.audience, 'ALL'] } }
+          : query.audience
+            ? { audience: query.audience }
+            : {}),
         ...(query.campus_id
           ? { campuses: { some: { campusId: query.campus_id } } }
           : {}),
@@ -214,7 +219,12 @@ export class CoursesService {
         ...(query.term ? { termId: query.term } : {}),
         ...(query.status ? { status: query.status } : {}),
         ...(query.format ? { format: query.format } : {}),
-        ...(query.audience ? { audience: query.audience } : {}),
+        // 适合对象筛选：选"少儿"/"成人"时，"不限"(ALL)的课程也符合（对所有人开放）
+        ...(query.audience === 'YOUTH' || query.audience === 'ADULT'
+          ? { audience: { in: [query.audience, 'ALL'] } }
+          : query.audience
+            ? { audience: query.audience }
+            : {}),
         ...(query.campus
           ? { campuses: { some: { campusId: query.campus } } }
           : {}),
