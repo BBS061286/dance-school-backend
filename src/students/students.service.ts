@@ -11,6 +11,8 @@ export interface SearchStudentsQuery {
   weekday?: number;
   q?: string;
   term?: string;
+  /** 课程类型：GROUP/ PRIVATE/MASTER，逗号分隔表示"同时上"（如 GROUP,PRIVATE） */
+  formats?: string;
 }
 
 /**
@@ -101,20 +103,39 @@ export class StudentsService {
         ];
       }
     }
-    if (query.campus || query.weekday !== undefined || query.term) {
-      where.enrollments = {
-        some: {
-          classSession: {
-            ...(query.campus ? { campusId: query.campus } : {}),
-            course: {
-              ...(query.weekday !== undefined
-                ? { weekdays: { has: query.weekday } }
-                : {}),
-              ...(query.term ? { termId: query.term } : {}),
-            },
-          },
+    const formatList = (query.formats ?? '')
+      .split(',')
+      .map((f) => f.trim())
+      .filter((f) => ['GROUP', 'PRIVATE', 'MASTER'].includes(f));
+    // 构造"某类型报名"过滤器
+    const formatEnrollment = (fmt: string): Prisma.EnrollmentWhereInput => ({
+      classSession: {
+        ...(query.campus ? { campusId: query.campus } : {}),
+        course: {
+          ...(query.weekday !== undefined ? { weekdays: { has: query.weekday } } : {}),
+          ...(query.term ? { termId: query.term } : {}),
+          format: fmt as never,
         },
-      };
+      },
+    });
+    const plainEnrollment = (): Prisma.EnrollmentWhereInput => ({
+      classSession: {
+        ...(query.campus ? { campusId: query.campus } : {}),
+        course: {
+          ...(query.weekday !== undefined ? { weekdays: { has: query.weekday } } : {}),
+          ...(query.term ? { termId: query.term } : {}),
+        },
+      },
+    });
+    if (query.campus || query.weekday !== undefined || query.term || formatList.length > 0) {
+      if (formatList.length === 1) {
+        where.enrollments = { some: formatEnrollment(formatList[0]) };
+      } else if (formatList.length > 1) {
+        // 多类型：每种都要有报名（AND）
+        where.AND = formatList.map((f) => ({ enrollments: { some: formatEnrollment(f) } }));
+      } else {
+        where.enrollments = { some: plainEnrollment() };
+      }
     }
     if (query.q) {
       where.name = { contains: query.q, mode: 'insensitive' };

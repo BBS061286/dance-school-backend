@@ -36,6 +36,10 @@ class SearchStudentsQueryDto {
   @IsOptional()
   @IsString({ message: 'term 必须是学期 ID' })
   term?: string;
+
+  @IsOptional()
+  @IsString({ message: 'formats 必须是逗号分隔的课程类型' })
+  formats?: string;
 }
 
 /** 学员查询路由（§6.12，ADMIN）。全局前缀 /api/v1 在 main.ts 设置。 */
