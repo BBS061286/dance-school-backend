@@ -648,7 +648,10 @@ model Order {
   id                   String            @id @default(uuid())
   parentId             String
   parent               User              @relation("OrderParent", fields: [parentId], references: [id])
-  amountCents          Int               // 应付总额
+  amountCents          Int               // 应付总额（含折扣后）
+  originalAmountCents  Int               // 折扣前原价；无折扣时 = amountCents
+  discountType         String?           // PERCENT 打折（如 90=9折）/ FIXED 直减（cents）；null=无折扣
+  discountValue        Int?              // PERCENT 时 1-99；FIXED 时减免的 cents
   currency             String            @default("usd")
   // v2 R4/R5：除 FAILED / CANCELLED（显式终态）外，status 均由 Payment 与 RefundRecord
   // 流水派生，禁止直接修改。派生规则：

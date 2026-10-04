@@ -17,7 +17,7 @@ import { EnrollmentsService } from '../enrollments/enrollments.service';
 import { PaymentsProvider } from '../integrations/payments.provider';
 import { PrismaService } from '../prisma/prisma.service';
 import { RequestUser, TxClient } from '../common/types';
-import { AdminOrdersQuery } from './dto/order.dto';
+import { AdminOrdersQuery, SetDiscountDto } from './dto/order.dto';
 import { RecordPaymentDto, RefundDto } from './dto/payment.dto';
 
 /** 学员自助提交允许的付款方式（线上 Stripe 必须走 Checkout） */
@@ -243,6 +243,7 @@ export class BillingService {
         data: {
           parentId: requester.id,
           amountCents,
+          originalAmountCents: amountCents,
           paymentMethod: dto.payment_method ?? 'STRIPE',
           items: { create: itemInputs },
         },
@@ -541,6 +542,50 @@ export class BillingService {
     return result;
   }
 
+  /**
+   * 管理员设置/清除订单折扣。
+   * 仅无任何付款/退款记录的待支付订单可操作；折扣只改应付金额，不动明细行。
+   * PERCENT：discount_value 1-99（如 90=9折）；FIXED：discount_value 为直减 cents。
+   * 传 discount_type=null 清除折扣，应付恢复为原价。
+   */
+  async setOrderDiscount(orderId: string, dto: SetDiscountDto) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { payments: true, refunds: true },
+    });
+    if (!order) throw new NotFoundException(`订单不存在：${orderId}`);
+    if (order.payments.length > 0 || order.refunds.length > 0) {
+      throw new ConflictException('订单已有付款或退款记录，不可再设置折扣');
+    }
+
+    const type = dto.discount_type ?? null;
+    const value = dto.discount_value ?? null;
+    let discountType: string | null = null;
+    let discountValue: number | null = null;
+    let amountCents = order.originalAmountCents;
+
+    if (type) {
+      if (value == null) throw new BadRequestException('请填写折扣值');
+      if (type === 'PERCENT') {
+        if (value < 1 || value > 99)
+          throw new BadRequestException('打折须为 1-99 的整数，如 90 表示 9 折');
+        amountCents = Math.round((order.originalAmountCents * value) / 100);
+      } else {
+        if (value >= order.originalAmountCents)
+          throw new BadRequestException('直减金额须小于订单原价');
+        amountCents = order.originalAmountCents - value;
+      }
+      if (amountCents < 1) throw new BadRequestException('折后应付金额至少为 1 分');
+      discountType = type;
+      discountValue = value;
+    }
+
+    return this.prisma.order.update({
+      where: { id: orderId },
+      data: { discountType, discountValue, amountCents },
+    });
+  }
+
   // ---------------------------------------------------------------- 退款
 
   /** 退款预览：直接委托报名模块 */
@@ -733,6 +778,7 @@ export class BillingService {
       orderBy: { createdAt: 'asc' },
     });
   }
+
 
   // ---------------------------------------------------------------- 退款中心
 

@@ -3,9 +3,11 @@ import {
   IsArray,
   IsEnum,
   IsIn,
+  IsInt,
   IsOptional,
   IsString,
   IsUUID,
+  Min,
 } from 'class-validator';
 import { OrderPaymentMethod, OrderStatus } from '@prisma/client';
 
@@ -109,4 +111,18 @@ export class RefundRecordQuery {
   @IsOptional()
   @IsString()
   term?: string;
+}
+
+/** 管理员设置订单折扣：仅待支付订单可设；传 null 清除折扣 */
+export class SetDiscountDto {
+  /** PERCENT 打折 / FIXED 直减；null 表示清除折扣 */
+  @IsOptional()
+  @IsIn(['PERCENT', 'FIXED'], { message: 'discount_type 必须是 PERCENT 或 FIXED' })
+  discount_type?: 'PERCENT' | 'FIXED' | null;
+
+  /** PERCENT 时 1-99（如 90=9折）；FIXED 时减免的 cents；清除时可不传 */
+  @IsOptional()
+  @IsInt({ message: 'discount_value 必须是整数' })
+  @Min(1, { message: 'discount_value 至少为 1' })
+  discount_value?: number | null;
 }

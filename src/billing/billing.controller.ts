@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   Request,
@@ -10,7 +11,7 @@ import {
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RequestUser } from '../common/types';
 import { BillingService } from './billing.service';
-import { AdminOrdersQuery, CreateOrderDto, RefundEnrollmentQuery, RefundEventRegistrationQuery, RefundRecordQuery } from './dto/order.dto';
+import { AdminOrdersQuery, CreateOrderDto, RefundEnrollmentQuery, RefundEventRegistrationQuery, RefundRecordQuery, SetDiscountDto } from './dto/order.dto';
 import { RecordPaymentDto, RefundDto } from './dto/payment.dto';
 
 /**
@@ -61,6 +62,13 @@ export class BillingController {
   @Roles('ADMIN')
   adminOrders(@Query() query: AdminOrdersQuery) {
     return this.billingService.adminOrders(query);
+  }
+
+  /** 管理员设置/清除订单折扣（仅待支付订单） */
+  @Patch('admin/orders/:id/discount')
+  @Roles('ADMIN')
+  setOrderDiscount(@Param('id') id: string, @Body() dto: SetDiscountDto) {
+    return this.billingService.setOrderDiscount(id, dto);
   }
 
   /** 管理员线下代收录入 */

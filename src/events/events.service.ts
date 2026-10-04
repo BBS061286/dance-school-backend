@@ -367,6 +367,7 @@ export class EventsService {
         data: {
           parentId,
           amountCents: ticketTotalCents,
+          originalAmountCents: ticketTotalCents,
           paymentMethod: 'STRIPE',
           items: {
             create: [
@@ -401,6 +402,7 @@ export class EventsService {
         data: {
           parentId,
           amountCents: feeCents,
+          originalAmountCents: feeCents,
           paymentMethod: 'STRIPE',
           items: {
             create: [
