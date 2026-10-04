@@ -145,15 +145,18 @@ export class InstructorsService {
     return { ...instructor, reviews };
   }
 
-  /** 教师课时统计：GET /admin/instructors/:id/stats — 按学期分组 */
-  async teachingStats(id: string) {
+  /** 教师课时统计：GET /admin/instructors/:id/stats?term= — 按学期分组 + 按月课时 */
+  async teachingStats(id: string, termId?: string) {
     const instructor = await this.prisma.instructor.findUnique({
       where: { id },
       select: { id: true },
     });
     if (!instructor) throw new NotFoundException('教师不存在');
     const sessions = await this.prisma.classSession.findMany({
-      where: { instructorId: id },
+      where: {
+        instructorId: id,
+        ...(termId ? { course: { termId } } : {}),
+      },
       select: {
         id: true,
         course: {
@@ -165,7 +168,7 @@ export class InstructorsService {
           },
         },
         occurrences: {
-          select: { id: true, date: true, status: true },
+          select: { id: true, date: true, status: true, timeRange: true },
         },
         _count: { select: { enrollments: true } },
       },
@@ -187,10 +190,34 @@ export class InstructorsService {
     const checkinCount = await this.prisma.instructorCheckin.count({
       where: { instructorId: id },
     });
+    // 按月统计课时（小时）：解析 timeRange，如 "17:00-18:00" = 1 小时；解析失败按 1 小时
+    const byMonth = new Map<string, { month: string; sessions: number; hours: number }>();
+    const parseHours = (tr?: string | null): number => {
+      if (!tr) return 1;
+      const m = tr.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+      if (!m) return 1;
+      const start = parseInt(m[1]) * 60 + parseInt(m[2]);
+      const end = parseInt(m[3]) * 60 + parseInt(m[4]);
+      const diff = end - start;
+      return diff > 0 ? diff / 60 : 1;
+    };
+    for (const sess of sessions) {
+      for (const occ of sess.occurrences) {
+        if (occ.status === 'CANCELLED') continue;
+        const month = new Date(occ.date).toISOString().slice(0, 7); // YYYY-MM
+        if (!byMonth.has(month)) byMonth.set(month, { month, sessions: 0, hours: 0 });
+        const g = byMonth.get(month)!;
+        g.sessions += 1;
+        g.hours += parseHours(occ.timeRange);
+      }
+    }
+    const monthly = [...byMonth.values()].sort((a, b) => b.month.localeCompare(a.month));
     return {
       byTerm: [...byTerm.values()],
+      byMonth: monthly,
       totalSessions: sessions.length,
       totalCheckins: checkinCount,
+      totalHours: monthly.reduce((a, b) => a + b.hours, 0),
     };
   }
 

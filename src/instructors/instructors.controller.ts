@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { Roles } from '../auth/decorators/roles.decorator';
 import {
@@ -39,10 +39,10 @@ export class InstructorsController {
     return this.instructors.detail(id);
   }
 
-  /** 教师课时统计：GET /admin/instructors/:id/stats */
+  /** 教师课时统计：GET /admin/instructors/:id/stats?term= */
   @Get('admin/instructors/:id/stats')
-  teachingStats(@Param('id') id: string) {
-    return this.instructors.teachingStats(id);
+  teachingStats(@Param('id') id: string, @Query('term') term?: string) {
+    return this.instructors.teachingStats(id, term);
   }
 
   /** 编辑教师资料：PATCH /admin/instructors/:id */
