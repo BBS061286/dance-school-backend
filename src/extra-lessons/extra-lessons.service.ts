@@ -282,6 +282,45 @@ export class ExtraLessonsService {
   }
 
   /** 管理员直接取消该时段 → DECLINED */
+  /** 更换临约私教的老师：PATCH /admin/extra-lesson-requests/:id/instructor */
+  async reassignInstructor(requestId: string, instructorId: string) {
+    const request = await this.prisma.extraLessonRequest.findUnique({
+      where: { id: requestId },
+      include: { student: { select: { name: true } } },
+    });
+    if (!request) throw new NotFoundException('私教单不存在');
+    const instructor = await this.prisma.instructor.findUnique({
+      where: { id: instructorId },
+      include: { user: { select: { id: true, name: true } } },
+    });
+    if (!instructor) throw new NotFoundException('老师不存在');
+    const updated = await this.prisma.extraLessonRequest.update({
+      where: { id: requestId },
+      data: { instructorId },
+      include: {
+        instructor: { include: { user: { select: { name: true } } } },
+        student: { select: { name: true } },
+      },
+    });
+    // 通知新老师
+    try {
+      await this.prisma.notification.create({
+        data: {
+          userId: instructor.user.id,
+          type: 'CLASS_REMINDER',
+          title: '私教单转派通知',
+          body: `学员 ${request.student.name} 的私教单已转派给您`,
+          sourceType: 'COURSE',
+          sourceId: requestId,
+          channels: ['IN_APP'],
+        },
+      });
+    } catch {
+      /* 忽略 */
+    }
+    return updated;
+  }
+
   async cancelSlot(adminId: string, slotId: string) {
     const slot = await this.loadSlot(slotId);
     this.assertTransitionAllowed(slot.status, 'cancel');

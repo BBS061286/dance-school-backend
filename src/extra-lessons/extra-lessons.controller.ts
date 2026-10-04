@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   Request,
@@ -73,6 +74,16 @@ export class ExtraLessonsController {
 
   /** 直接批准该时段 → CONFIRMED（ADMIN） */
   @Roles(UserRole.ADMIN)
+  /** 更换临约私教的老师 */
+  @Roles(UserRole.ADMIN)
+  @Patch('admin/extra-lesson-requests/:id/instructor')
+  reassignInstructor(
+    @Param('id') id: string,
+    @Body() dto: { instructor_id: string },
+  ) {
+    return this.lessons.reassignInstructor(id, dto.instructor_id);
+  }
+
   @Post('admin/extra-lesson-slots/:id/approve')
   approveSlot(
     @Request() req: { user: RequestUser },
