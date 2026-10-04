@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   UnauthorizedException,
@@ -66,7 +67,8 @@ export class AuthService {
     }
     const ok = await bcrypt.compare(dto.password, user.passwordHash);
     if (!ok) throw new UnauthorizedException('邮箱或密码错误');
-    return this.issueTokens(user.id, user.email, user.role);
+    const tokens = this.issueTokens(user.id, user.email, user.role);
+    return { ...tokens, mustChangePassword: user.mustChangePassword };
   }
 
   /** 用 refresh_token 换新的 access_token */
@@ -87,6 +89,23 @@ export class AuthService {
       throw new UnauthorizedException('用户不存在或已停用');
     }
     return this.issueTokens(user.id, user.email, user.role);
+  }
+
+  /** 改密码：POST /me/password。若 mustChangePassword=true 可不传 oldPassword */
+  async changePassword(userId: string, oldPassword: string | undefined, newPassword: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || !user.isActive) throw new UnauthorizedException('用户不存在或已停用');
+    if (!user.mustChangePassword) {
+      if (!oldPassword) throw new BadRequestException('请提供原密码');
+      const ok = await bcrypt.compare(oldPassword, user.passwordHash);
+      if (!ok) throw new BadRequestException('原密码不正确');
+    }
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash, mustChangePassword: false },
+    });
+    return { message: '密码修改成功' };
   }
 
   /** 忘记密码：D1 仅 stub，真实邮件发送在后续阶段接入 SendGrid 后实现 */

@@ -51,6 +51,7 @@ export class InstructorsService {
           phone: dto.phone,
           role: UserRole.INSTRUCTOR,
           passwordHash,
+          mustChangePassword: true,
         },
       });
       return tx.instructor.create({

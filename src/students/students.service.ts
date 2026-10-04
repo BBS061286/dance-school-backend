@@ -1,9 +1,14 @@
 import {
+  BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Gender, Prisma, Relationship, UserRole } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
+import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { AdminCreateStudentDto } from './dto/admin-create-student.dto';
 
 export interface SearchStudentsQuery {
   audience?: 'YOUTH' | 'ADULT';
@@ -23,6 +28,110 @@ export interface SearchStudentsQuery {
 @Injectable()
 export class StudentsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * 管理端直接建学员：POST /admin/students（ADMIN）。
+   * - type=child：parentId（关联已有家长）或 parent（新建家长账号）二选一
+   * - type=adult：新建 ADULT_STUDENT 账号 + SELF 关联
+   * 新建账号均设 mustChangePassword=true，返回临时密码。
+   */
+  async adminCreate(dto: AdminCreateStudentDto) {
+    const dob = dto.birthdate ? new Date(dto.birthdate) : null;
+    const gender = dto.gender ?? null;
+
+    if (dto.type === 'child') {
+      if (!dto.parentId && !dto.parent) {
+        throw new BadRequestException('少儿学员需提供 parentId 或 parent');
+      }
+      if (dto.parentId && dto.parent) {
+        throw new BadRequestException('parentId 和 parent 只能传一个');
+      }
+
+      let parentUserId: string;
+      let tempPassword: string | null = null;
+
+      if (dto.parentId) {
+        const parent = await this.prisma.user.findUnique({ where: { id: dto.parentId } });
+        if (!parent || parent.role !== UserRole.PARENT) {
+          throw new BadRequestException('指定的家长不存在或角色不正确');
+        }
+        parentUserId = parent.id;
+      } else {
+        const p = dto.parent!;
+        // 按 phone 找已有家长
+        const existing = await this.prisma.user.findFirst({
+          where: { phone: p.phone, role: UserRole.PARENT },
+        });
+        if (existing) {
+          parentUserId = existing.id;
+        } else {
+          if (p.email) {
+            const emailTaken = await this.prisma.user.findUnique({ where: { email: p.email } });
+            if (emailTaken) throw new ConflictException('该邮箱已被注册');
+          }
+          tempPassword = randomBytes(4).toString('hex');
+          const passwordHash = await bcrypt.hash(tempPassword, 10);
+          const created = await this.prisma.user.create({
+            data: {
+              email: p.email ?? `parent_${Date.now()}@placeholder.local`,
+              name: p.name,
+              phone: p.phone,
+              role: UserRole.PARENT,
+              passwordHash,
+              mustChangePassword: true,
+            },
+          });
+          parentUserId = created.id;
+        }
+      }
+
+      const student = await this.prisma.student.create({
+        data: { name: dto.name, dob, gender },
+      });
+      await this.prisma.parentStudentLink.create({
+        data: {
+          parentId: parentUserId,
+          studentId: student.id,
+          relationship: Relationship.GUARDIAN,
+          isPrimaryContact: true,
+        },
+      });
+      return { student, parentId: parentUserId, ...(tempPassword ? { tempPassword } : {}) };
+    }
+
+    // type=adult
+    if (dto.email) {
+      const emailTaken = await this.prisma.user.findUnique({ where: { email: dto.email } });
+      if (emailTaken) throw new ConflictException('该邮箱已被注册');
+    }
+    const tempPassword = randomBytes(4).toString('hex');
+    const passwordHash = await bcrypt.hash(tempPassword, 10);
+    const result = await this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          email: dto.email ?? `adult_${Date.now()}@placeholder.local`,
+          name: dto.name,
+          phone: dto.phone,
+          role: UserRole.ADULT_STUDENT,
+          passwordHash,
+          mustChangePassword: true,
+        },
+      });
+      const student = await tx.student.create({
+        data: { name: dto.name, dob, gender },
+      });
+      await tx.parentStudentLink.create({
+        data: {
+          parentId: user.id,
+          studentId: student.id,
+          relationship: Relationship.SELF,
+          isPrimaryContact: true,
+        },
+      });
+      return { user, student };
+    });
+    return { student: result.student, userId: result.user.id, tempPassword };
+  }
 
   /** GET /admin/students?audience=&campus=&weekday=&q= */
   /** 学员统计：GET /admin/students/stats — 现役少儿/成人数量 */

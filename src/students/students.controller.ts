@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import {
@@ -12,6 +12,7 @@ import {
 } from 'class-validator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { StudentsService } from './students.service';
+import { AdminCreateStudentDto } from './dto/admin-create-student.dto';
 
 class SearchStudentsQueryDto {
   @IsOptional()
@@ -59,6 +60,13 @@ export class StudentsController {
   @Get('admin/students')
   search(@Query() query: SearchStudentsQueryDto) {
     return this.students.search(query);
+  }
+
+  /** 管理端直接建学员：POST /admin/students */
+  @Roles(UserRole.ADMIN)
+  @Post('admin/students')
+  adminCreate(@Body() dto: AdminCreateStudentDto) {
+    return this.students.adminCreate(dto);
   }
 
   /** 学员详情：GET /admin/students/:id/detail */

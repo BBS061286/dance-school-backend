@@ -1,9 +1,11 @@
-import { BadRequestException, Body, Controller, Get, Patch, Request } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Patch, Post, Request } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RequestUser } from '../common/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateMeDto } from './dto/update-me.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { AuthService } from '../auth/auth.service';
 import { UsersService } from './users.service';
 
 @Controller()
@@ -11,12 +13,19 @@ export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     private readonly prisma: PrismaService,
+    private readonly authService: AuthService,
   ) {}
 
   /** 当前用户信息（设计文档 §4.3） */
   @Get('me')
   me(@Request() req: { user: { id: string } }) {
     return this.usersService.getMe(req.user.id);
+  }
+
+  /** 改密码：POST /me/password（所有登录用户） */
+  @Post('me/password')
+  changePassword(@Request() req: { user: RequestUser }, @Body() dto: ChangePasswordDto) {
+    return this.authService.changePassword(req.user.id, dto.oldPassword, dto.newPassword);
   }
 
   /** 我的学员列表（家长 / 成人学员）：[{ id, name }] */

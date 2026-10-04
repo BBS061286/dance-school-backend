@@ -287,6 +287,7 @@ model User {
   passwordHash String
   avatarUrl    String?
   isActive     Boolean   @default(true)
+  mustChangePassword Boolean @default(false)
   // 6.10 成人学员补充字段（role = ADULT_STUDENT 时使用）
   // v2 R8b：年龄唯一事实来源是 Student.dob，User 上不再存储 age
   preferredCampusIds String[] // 常去/可参加的校区 UUID 数组（Prisma 无原生 UUID[]，用 String[]）
