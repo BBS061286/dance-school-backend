@@ -97,6 +97,15 @@ export class RemindersService {
     return this.prisma.reminderRule.update({ where: { id }, data: dto });
   }
 
+  async deleteRule(id: string) {
+    const existing = await this.prisma.reminderRule.findUnique({
+      where: { id },
+    });
+    if (!existing) throw new NotFoundException('提醒规则不存在');
+    await this.prisma.reminderRule.delete({ where: { id } });
+    return { success: true };
+  }
+
   /** GET /admin/reminder-logs?target_id= */
   listLogs(targetId?: string) {
     return this.prisma.reminderLog.findMany({
