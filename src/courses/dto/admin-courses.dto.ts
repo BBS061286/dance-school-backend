@@ -13,6 +13,11 @@ export class AdminCoursesQuery {
   @IsString()
   term?: string;
 
+  /** 只返回该老师有任教班次的课程 */
+  @IsOptional()
+  @IsString()
+  instructor_id?: string;
+
   /** 状态：DRAFT / PUBLISHED / ARCHIVED */
   @IsOptional()
   @IsEnum(CourseStatus)
