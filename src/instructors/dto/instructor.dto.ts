@@ -29,6 +29,15 @@ export class UpdateInstructorDto {
   availableWeekdays?: number[];
 
   @IsOptional()
+  defaultGroupRateCents?: number;
+
+  @IsOptional()
+  defaultPrivateRateCents?: number;
+
+  @IsOptional()
+  defaultMasterRateCents?: number;
+
+  @IsOptional()
   @IsString({ message: 'bio 必须是字符串' })
   bio?: string;
 
@@ -74,6 +83,15 @@ export class CreateInstructorDto {
   @IsOptional()
   @IsArray({ message: '可排课时间必须是数组' })
   availableWeekdays?: number[];
+
+  @IsOptional()
+  defaultGroupRateCents?: number;
+
+  @IsOptional()
+  defaultPrivateRateCents?: number;
+
+  @IsOptional()
+  defaultMasterRateCents?: number;
 
   @IsOptional()
   @IsString({ message: '简介必须是字符串' })

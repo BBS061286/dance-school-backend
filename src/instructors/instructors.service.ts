@@ -107,6 +107,19 @@ export class InstructorsService {
           },
           orderBy: { startTime: 'asc' },
         },
+        // 课程关联（含每门课时费）
+        courseLinks: {
+          include: {
+            course: {
+              select: {
+                id: true,
+                title: true,
+                format: true,
+                term: { select: { id: true, name: true } },
+              },
+            },
+          },
+        },
         // 私教课安排（1对1/临时 group）
         extraLessons: {
           include: {
@@ -185,13 +198,50 @@ export class InstructorsService {
     });
   }
 
-  /** 教师课时统计：GET /admin/instructors/:id/stats?term= — 按学期分组 + 按月课时 */
+  /** 设置老师在某门课的课时费：PATCH /admin/courses/:courseId/instructors/:instructorId/rate */
+  async setCourseRate(courseId: string, instructorId: string, hourlyRateCents: number | null) {
+    const link = await this.prisma.courseInstructor.findUnique({
+      where: { courseId_instructorId: { courseId, instructorId } },
+    });
+    if (!link) throw new NotFoundException('该老师未关联此课程');
+    return this.prisma.courseInstructor.update({
+      where: { courseId_instructorId: { courseId, instructorId } },
+      data: { hourlyRateCents },
+      include: {
+        course: { select: { id: true, title: true, format: true } },
+        instructor: { include: { user: { select: { name: true } } } },
+      },
+    });
+  }
+
+  /** 教师课时统计：GET /admin/instructors/:id/stats?term= — 按学期分组 + 按月课时 + 薪资 */
   async teachingStats(id: string, termId?: string) {
     const instructor = await this.prisma.instructor.findUnique({
       where: { id },
-      select: { id: true },
+      select: {
+        id: true,
+        defaultGroupRateCents: true,
+        defaultPrivateRateCents: true,
+        defaultMasterRateCents: true,
+      },
     });
     if (!instructor) throw new NotFoundException('教师不存在');
+    // 该老师所有课程的课时费
+    const rateLinks = await this.prisma.courseInstructor.findMany({
+      where: { instructorId: id },
+      select: { courseId: true, hourlyRateCents: true },
+    });
+    const rateMap = new Map(rateLinks.map((r) => [r.courseId, r.hourlyRateCents]));
+    const defaultRateFor = (format: string): number | null => {
+      if (format === 'PRIVATE') return instructor.defaultPrivateRateCents;
+      if (format === 'MASTER') return instructor.defaultMasterRateCents;
+      return instructor.defaultGroupRateCents;
+    };
+    const rateFor = (courseId: string, format: string): number | null => {
+      const specific = rateMap.get(courseId);
+      if (specific != null) return specific;
+      return defaultRateFor(format);
+    };
     const sessions = await this.prisma.classSession.findMany({
       where: {
         instructorId: id,
@@ -237,7 +287,12 @@ export class InstructorsService {
       where: { instructorId: id },
     });
     // 按月统计课时（小时）：解析 timeRange，如 "17:00-18:00" = 1 小时；解析失败按 1 小时
+    // 同时按课程统计薪资：hours × rate
     const byMonth = new Map<string, { month: string; sessions: number; hours: number }>();
+    const byCoursePay = new Map<string, {
+      courseId: string; courseTitle: string; format: string;
+      hours: number; rateCents: number | null; payCents: number;
+    }>();
     const parseHours = (tr?: string | null): number => {
       if (!tr) return 1;
       const m = tr.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
@@ -248,6 +303,10 @@ export class InstructorsService {
       return diff > 0 ? diff / 60 : 1;
     };
     for (const sess of sessions) {
+      const rate = rateFor(sess.course.id, sess.course.format);
+      const hrs = sess.occurrences
+        .filter((occ) => occ.status !== 'CANCELLED' && !occ.substituteInstructorId)
+        .reduce((sum, occ) => sum + parseHours(occ.timeRange), 0);
       for (const occ of sess.occurrences) {
         if (occ.status === 'CANCELLED') continue;
         // 有代课老师的课次不计入原老师课时（计入代课老师）
@@ -257,6 +316,22 @@ export class InstructorsService {
         const g = byMonth.get(month)!;
         g.sessions += 1;
         g.hours += parseHours(occ.timeRange);
+      }
+      // 按课程累加薪资
+      if (hrs > 0) {
+        if (!byCoursePay.has(sess.course.id)) {
+          byCoursePay.set(sess.course.id, {
+            courseId: sess.course.id,
+            courseTitle: sess.course.title,
+            format: sess.course.format,
+            hours: 0,
+            rateCents: rate,
+            payCents: 0,
+          });
+        }
+        const cp = byCoursePay.get(sess.course.id)!;
+        cp.hours += hrs;
+        cp.payCents += rate != null ? Math.round(hrs * rate) : 0;
       }
     }
     // 加上该老师代课的课次
@@ -280,6 +355,7 @@ export class InstructorsService {
       subSessions += 1;
     }
     const monthly = [...byMonth.values()].sort((a, b) => b.month.localeCompare(a.month));
+    const payByCourse = [...byCoursePay.values()];
     return {
       byTerm: [...byTerm.values()],
       byMonth: monthly,
@@ -287,6 +363,8 @@ export class InstructorsService {
       totalCheckins: checkinCount,
       totalHours: monthly.reduce((a, b) => a + b.hours, 0),
       substituteSessions: subSessions,
+      payByCourse,
+      totalPayCents: payByCourse.reduce((a, b) => a + b.payCents, 0),
     };
   }
 
@@ -334,6 +412,15 @@ export class InstructorsService {
           : {}),
         ...(dto.availableWeekdays !== undefined
           ? { availableWeekdays: dto.availableWeekdays }
+          : {}),
+        ...(dto.defaultGroupRateCents !== undefined
+          ? { defaultGroupRateCents: dto.defaultGroupRateCents }
+          : {}),
+        ...(dto.defaultPrivateRateCents !== undefined
+          ? { defaultPrivateRateCents: dto.defaultPrivateRateCents }
+          : {}),
+        ...(dto.defaultMasterRateCents !== undefined
+          ? { defaultMasterRateCents: dto.defaultMasterRateCents }
           : {}),
       },
       include: {

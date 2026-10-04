@@ -58,6 +58,16 @@ export class InstructorsController {
     return this.instructors.teachingStats(id, term);
   }
 
+  /** 设置老师在某门课的课时费 */
+  @Patch('admin/courses/:courseId/instructors/:instructorId/rate')
+  setCourseRate(
+    @Param('courseId') courseId: string,
+    @Param('instructorId') instructorId: string,
+    @Body() dto: { hourly_rate_cents: number | null },
+  ) {
+    return this.instructors.setCourseRate(courseId, instructorId, dto.hourly_rate_cents ?? null);
+  }
+
   /** 编辑教师资料：PATCH /admin/instructors/:id */
   @Patch('admin/instructors/:id')
   update(@Param('id') id: string, @Body() dto: UpdateInstructorDto) {

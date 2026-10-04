@@ -325,6 +325,10 @@ model Instructor {
   defaultCampus   Campus?  @relation(fields: [defaultCampusId], references: [id])
   // 可排课时间：每周哪几天有空（0=周日..6=周六），空数组=未设置
   availableWeekdays Int[] @default([])
+  // 默认课时费（美分/小时）：按课程类型；具体课程可在 CourseInstructor 覆盖
+  defaultGroupRateCents   Int?
+  defaultPrivateRateCents Int?
+  defaultMasterRateCents  Int?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -472,6 +476,8 @@ model CourseInstructor {
   course       Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
   instructorId String
   instructor   Instructor @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+  // 该老师在这门课的课时费（美分/小时）；为空表示未设置
+  hourlyRateCents Int?
 
   @@id([courseId, instructorId])
 }
