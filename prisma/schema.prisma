@@ -260,6 +260,7 @@ enum NotificationType {
   PAYMENT_REMINDER
   WAITLIST_PROMOTED // v2 R1：候补转正通知
   ENROLLMENT_CREATED // 管理员代报名成功通知（含私教课建课自动报名）
+  MESSAGE_RECEIVED // 用户发私信时通知所有管理员
 }
 
 enum NotificationSourceType {
@@ -305,6 +306,7 @@ model User {
   documentSends       DocumentSend[]       @relation("DocumentSendCreator")
   messageThreads      MessageThread[]      @relation("ThreadParticipant")
   messagesSent        Message[]            @relation("MessageSender")
+  messageTemplates    MessageTemplate[]    @relation("TemplateCreator")
   notifications       Notification[]
   reminderLogs        ReminderLog[]        @relation("ReminderRecipient")
   signaturesMade      DocumentSignature[]  @relation("SignedBy")
@@ -927,6 +929,19 @@ model Message {
   body       String
   createdAt  DateTime   @default(now())
   readAt     DateTime?
+}
+
+// ------------------- 6.22b MessageTemplate（快捷回复模板） -------------------
+
+model MessageTemplate {
+  id          String   @id @default(uuid())
+  title       String
+  body        String
+  createdById String
+  createdBy   User     @relation("TemplateCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@index([createdById])
 }
 
 // ---------------- 6.24 Document / DocumentSignature --------------------------
