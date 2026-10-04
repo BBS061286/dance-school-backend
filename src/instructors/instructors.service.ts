@@ -72,7 +72,7 @@ export class InstructorsService {
     return this.prisma.instructor.findMany({
       include: {
         user: {
-          select: { id: true, name: true, email: true, avatarUrl: true },
+          select: { id: true, name: true, email: true, phone: true, avatarUrl: true, isActive: true, createdAt: true },
         },
         _count: { select: { classSessions: true } },
       },
@@ -89,7 +89,7 @@ export class InstructorsService {
       where: { id },
       include: {
         user: {
-          select: { id: true, name: true, email: true, avatarUrl: true },
+          select: { id: true, name: true, email: true, phone: true, avatarUrl: true, isActive: true, createdAt: true },
         },
         defaultCampus: { select: { id: true, name: true } },
         classSessions: {
@@ -146,6 +146,22 @@ export class InstructorsService {
       });
       if (!campus) throw new NotFoundException('校区不存在');
     }
+    // 同步更新关联 User 的姓名/电话
+    if (dto.name !== undefined || dto.phone !== undefined) {
+      const inst = await this.prisma.instructor.findUnique({
+        where: { id },
+        select: { userId: true },
+      });
+      if (inst) {
+        await this.prisma.user.update({
+          where: { id: inst.userId },
+          data: {
+            ...(dto.name !== undefined ? { name: dto.name } : {}),
+            ...(dto.phone !== undefined ? { phone: dto.phone || null } : {}),
+          },
+        });
+      }
+    }
     return this.prisma.instructor.update({
       where: { id },
       data: {
@@ -154,8 +170,12 @@ export class InstructorsService {
           ? { specialties: dto.specialties }
           : {}),
         ...(dto.default_campus_id !== undefined
-          ? { defaultCampusId: dto.default_campus_id }
+          ? { defaultCampusId: dto.default_campus_id || null }
           : {}),
+      },
+      include: {
+        user: { select: { id: true, name: true, email: true, phone: true } },
+        defaultCampus: { select: { id: true, name: true } },
       },
     });
   }

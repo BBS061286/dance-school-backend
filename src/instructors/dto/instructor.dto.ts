@@ -10,6 +10,14 @@ import {
 /** 管理端编辑教师资料（§6.25） */
 export class UpdateInstructorDto {
   @IsOptional()
+  @IsString({ message: '姓名必须是字符串' })
+  name?: string;
+
+  @IsOptional()
+  @IsString({ message: '电话必须是字符串' })
+  phone?: string;
+
+  @IsOptional()
   @IsString({ message: 'bio 必须是字符串' })
   bio?: string;
 
