@@ -27,6 +27,13 @@ export class TermsService {
       const ac = isCurrent(a) ? 0 : 1;
       const bc = isCurrent(b) ? 0 : 1;
       if (ac !== bc) return ac - bc;
+      // 非当前：往期按开始日期倒序，未来学期放最后（按开始日期正序）
+      const aFuture = new Date(a.startDate) > today;
+      const bFuture = new Date(b.startDate) > today;
+      if (aFuture !== bFuture) return aFuture ? 1 : -1;
+      if (aFuture) {
+        return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
+      }
       return new Date(b.startDate).getTime() - new Date(a.startDate).getTime();
     });
   }
