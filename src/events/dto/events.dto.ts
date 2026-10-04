@@ -89,6 +89,12 @@ export class CreateEventDto {
   @IsIn(['PER_PERSON', 'SPLIT'])
   fee_mode?: string;
 
+  /** SPLIT 模式每组人数（如 3 人/组） */
+  @IsOptional()
+  @IsInt()
+  @Min(2)
+  group_size?: number;
+
   /** 多票种（可选）；为空则只用 ticket_price_cents 单一票价 */
   @IsOptional()
   @IsArray()
@@ -135,6 +141,21 @@ export class RegisterEventDto {
   @IsOptional()
   @IsString()
   tier_name?: string;
+
+  /** 组队动作：create=发起新组，join=加入现有组（SPLIT 模式） */
+  @IsOptional()
+  @IsIn(['create', 'join'])
+  group_action?: string;
+
+  /** create 时必填：组名 */
+  @IsOptional()
+  @IsString()
+  group_name?: string;
+
+  /** join 时必填：目标组 groupKey */
+  @IsOptional()
+  @IsString()
+  group_key?: string;
 }
 
 /** 管理员代报名活动/比赛：{ student_id, ticket_quantity?, group_key? } */
@@ -152,10 +173,26 @@ export class AdminRegisterEventDto {
   @IsString()
   group_key?: string;
 
+  /** 组名（SPLIT 模式；新建组时可命名） */
+  @IsOptional()
+  @IsString()
+  group_name?: string;
+
   /** 票种名（多票种活动可选） */
   @IsOptional()
   @IsString()
   tier_name?: string;
+}
+
+/** 管理员合并分组：{ registration_ids, group_name? } */
+export class MergeGroupDto {
+  @IsArray()
+  @IsUUID('4', { each: true })
+  registration_ids: string[];
+
+  @IsOptional()
+  @IsString()
+  group_name?: string;
 }
 
 /** 管理员发放参赛/参与费用 */

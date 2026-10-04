@@ -590,6 +590,8 @@ model Event {
   // 比赛报名费：PER_PERSON=按人收全额，SPLIT=总费用按组均摊
   participationFeeCents Int?
   feeMode             String?
+  // SPLIT 模式每组人数（如 3 人/组）
+  groupSize           Int?
   // 多票种：[{ name, priceCents, minQuantity?, validUntil? }]
   ticketTiers         Json?
   createdAt           DateTime      @default(now())
@@ -617,6 +619,8 @@ model EventRegistration {
   participationFeeCents Int?
   // SPLIT 均摊模式下同组报名共享一个 groupKey
   groupKey           String?
+  // 组名（显示用，如"小天鹅组"）
+  groupName          String?
   feeStatus          FeeStatus        @default(NOT_SET)
   // v2 R8e：删除 orderId；改用 EventRegistrationOrder 关联表（门票款与参赛费可拆单）
   createdAt          DateTime         @default(now())

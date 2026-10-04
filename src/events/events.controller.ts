@@ -13,7 +13,7 @@ import { UserRole } from '@prisma/client';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RequestUser } from '../common/types';
-import { AddTicketsDto, AdminRegisterEventDto, CreateEventDto, CreateNoticeDto, IssueFeeDto, PayEventRegistrationDto, RegisterEventDto } from './dto/events.dto';
+import { AddTicketsDto, AdminRegisterEventDto, CreateEventDto, CreateNoticeDto, IssueFeeDto, MergeGroupDto, PayEventRegistrationDto, RegisterEventDto } from './dto/events.dto';
 import { EventsService } from './events.service';
 
 /**
@@ -105,6 +105,19 @@ export class EventsController {
     @Body() dto: AdminRegisterEventDto,
   ) {
     return this.events.adminRegister(req.user.id, id, dto);
+  }
+
+  /** 管理员合并分组（ADMIN）：{ registration_ids, group_name? } */
+  @Roles(UserRole.ADMIN)
+  @Post('admin/event-registrations/merge-group')
+  mergeGroup(@Body() dto: MergeGroupDto) {
+    return this.events.mergeGroup(dto);
+  }
+
+  /** 活动分组列表（登录用户）：供家长加入组队时选择 */
+  @Get('events/:id/groups')
+  listGroups(@Param('id') id: string) {
+    return this.events.listGroups(id);
   }
 
   /** 取消活动报名 */

@@ -21,6 +21,7 @@ import {
   CreateEventDto,
   CreateNoticeDto,
   IssueFeeDto,
+  MergeGroupDto,
   PayEventRegistrationDto,
   RegisterEventDto,
 } from './dto/events.dto';
@@ -74,11 +75,35 @@ export class EventsService {
         maxTicketsPerRegistration: dto.max_tickets_per_registration ?? null,
         participationFeeCents: dto.participation_fee_cents ?? null,
         feeMode: dto.fee_mode ?? null,
+        groupSize: dto.group_size ?? null,
         ...(dto.ticket_tiers && dto.ticket_tiers.length > 0
           ? { ticketTiers: dto.ticket_tiers as unknown as object }
           : {}),
       },
     });
+  }
+
+  /**
+   * SPLIT 均摊重算：同 eventId + 同 groupKey 为一组，总费用均摊（向上取整），
+   * 只统计 REGISTERED/WAITLISTED（取消的不计入）。
+   */
+  private async recalcSplitGroup(eventId: string, groupKey: string, totalFeeCents: number) {
+    const members = await this.prisma.eventRegistration.findMany({
+      where: {
+        eventId,
+        groupKey,
+        status: { in: ['REGISTERED', 'WAITLISTED'] },
+      },
+      select: { id: true },
+    });
+    const perPerson = Math.ceil(totalFeeCents / Math.max(1, members.length));
+    if (members.length > 0) {
+      await this.prisma.eventRegistration.updateMany({
+        where: { id: { in: members.map((m) => m.id) } },
+        data: { participationFeeCents: perPerson },
+      });
+    }
+    return { memberCount: members.length, perPerson };
   }
 
   /**
@@ -157,6 +182,9 @@ export class EventsService {
         requiresTicket: true,
         ticketPriceCents: true,
         capacity: true,
+        participationFeeCents: true,
+        feeMode: true,
+        groupSize: true,
         campus: { select: { id: true, name: true } },
         _count: { select: { registrations: true } },
       },
@@ -268,7 +296,75 @@ export class EventsService {
       await this.createTicketOrder(user.id, registration.id, ticketTotalCents!, ticketTierName);
       await this.recordTierPurchase(registration.id, ticketTierName, ticketQuantity!, ticketTotalCents!);
     }
+
+    // SPLIT 组队：家长自助报名可发起/加入组队
+    if (event.feeMode === 'SPLIT' && event.participationFeeCents != null && event.participationFeeCents > 0) {
+      const action = dto.group_action;
+      if (action === 'create') {
+        if (!dto.group_name?.trim()) {
+          throw new BadRequestException('发起组队请填写组名');
+        }
+        const groupKey = randomUUID();
+        await this.prisma.eventRegistration.update({
+          where: { id: registration.id },
+          data: { groupKey, groupName: dto.group_name.trim() },
+        });
+        await this.recalcSplitGroup(eventId, groupKey, event.participationFeeCents);
+      } else if (action === 'join') {
+        if (!dto.group_key) {
+          throw new BadRequestException('加入组队请选择要加入的组');
+        }
+        await this.joinSplitGroup(eventId, registration.id, dto.group_key);
+      } else {
+        // 未指定组队动作：单独一组（按人全额）
+        const groupKey = randomUUID();
+        await this.prisma.eventRegistration.update({
+          where: { id: registration.id },
+          data: {
+            groupKey,
+            participationFeeCents: event.participationFeeCents,
+          },
+        });
+      }
+    } else if (event.participationFeeCents != null && event.participationFeeCents > 0) {
+      // PER_PERSON：每人交全额
+      await this.prisma.eventRegistration.update({
+        where: { id: registration.id },
+        data: { participationFeeCents: event.participationFeeCents },
+      });
+    }
     return registration;
+  }
+
+  /**
+   * 加入 SPLIT 组：校验组存在、同活动、人数未满（groupSize），加入后重算全组费用。
+   */
+  private async joinSplitGroup(eventId: string, registrationId: string, groupKey: string) {
+    const event = await this.prisma.event.findUnique({
+      where: { id: eventId },
+      select: { groupSize: true, participationFeeCents: true },
+    });
+    if (!event) throw new NotFoundException(`活动不存在：${eventId}`);
+    const existing = await this.prisma.eventRegistration.findMany({
+      where: {
+        eventId,
+        groupKey,
+        status: { in: ['REGISTERED', 'WAITLISTED'] },
+      },
+      select: { id: true, groupName: true },
+    });
+    if (existing.length === 0) {
+      throw new BadRequestException('该组不存在或已解散');
+    }
+    if (event.groupSize != null && existing.length >= event.groupSize) {
+      throw new BadRequestException(`该组已满（${event.groupSize} 人）`);
+    }
+    const groupName = existing[0].groupName;
+    await this.prisma.eventRegistration.update({
+      where: { id: registrationId },
+      data: { groupKey, groupName },
+    });
+    await this.recalcSplitGroup(eventId, groupKey, event.participationFeeCents ?? 0);
   }
 
   /**
@@ -361,28 +457,31 @@ export class EventsService {
     // 比赛报名费自动计算（feeStatus 保持 NOT_SET，缴费走 issue-fee/pay 流程）
     if (event.participationFeeCents != null && event.participationFeeCents > 0) {
       if (event.feeMode === 'SPLIT') {
-        // SPLIT：同 eventId + 同 groupKey 为一组，总费用均摊（向上取整）；
-        // 新成员加入后重算全组每人费用
-        const groupKey = dto.group_key ?? randomUUID();
-        await this.prisma.eventRegistration.update({
-          where: { id: registration.id },
-          data: { groupKey },
-        });
-        const members = await this.prisma.eventRegistration.findMany({
-          where: {
-            eventId,
-            groupKey,
-            status: { in: ['REGISTERED', 'WAITLISTED'] },
-          },
-          select: { id: true },
-        });
-        const perPerson = Math.ceil(
-          event.participationFeeCents / Math.max(1, members.length),
-        );
-        await this.prisma.eventRegistration.updateMany({
-          where: { id: { in: members.map((m) => m.id) } },
-          data: { participationFeeCents: perPerson },
-        });
+        // SPLIT：同 eventId + 同 groupKey 为一组，总费用均摊；新成员加入后重算全组
+        if (dto.group_key) {
+          // 加入现有组（校验人数上限）
+          await this.joinSplitGroup(eventId, registration.id, dto.group_key);
+          if (dto.group_name?.trim()) {
+            // 允许代报名时顺手改组名
+            const reg = await this.prisma.eventRegistration.findUnique({
+              where: { id: registration.id },
+              select: { groupKey: true },
+            });
+            if (reg?.groupKey) {
+              await this.prisma.eventRegistration.updateMany({
+                where: { eventId, groupKey: reg.groupKey },
+                data: { groupName: dto.group_name.trim() },
+              });
+            }
+          }
+        } else {
+          const groupKey = randomUUID();
+          await this.prisma.eventRegistration.update({
+            where: { id: registration.id },
+            data: { groupKey, groupName: dto.group_name?.trim() || null },
+          });
+          await this.recalcSplitGroup(eventId, groupKey, event.participationFeeCents);
+        }
       } else {
         // PER_PERSON（默认）：每人交全额
         await this.prisma.eventRegistration.update({
@@ -407,6 +506,114 @@ export class EventsService {
     }
 
     return registration;
+  }
+
+  /**
+   * 管理员合并分组（ADMIN）：POST /admin/event-registrations/merge-group。
+   * 把多个报名合并为同一组（SPLIT 均摊），重算每人费用。
+   */
+  async mergeGroup(dto: MergeGroupDto) {
+    if (!dto.registration_ids || dto.registration_ids.length < 2) {
+      throw new BadRequestException('请至少选择 2 条报名记录进行分组');
+    }
+    const regs = await this.prisma.eventRegistration.findMany({
+      where: { id: { in: dto.registration_ids } },
+      include: { event: true },
+    });
+    if (regs.length !== dto.registration_ids.length) {
+      throw new NotFoundException('部分报名记录不存在');
+    }
+    const eventIds = new Set(regs.map((r) => r.eventId));
+    if (eventIds.size !== 1) {
+      throw new BadRequestException('只能合并同一活动的报名');
+    }
+    const event = regs[0].event;
+    if (event.feeMode !== 'SPLIT') {
+      throw new BadRequestException('仅按组均摊（SPLIT）模式的比赛支持分组');
+    }
+    if (event.groupSize != null && regs.length > event.groupSize) {
+      throw new BadRequestException(`该组人数上限为 ${event.groupSize} 人`);
+    }
+
+    // 组名：不传则自动命名"第X组"
+    let groupName = dto.group_name?.trim();
+    if (!groupName) {
+      const groupCount = await this.prisma.eventRegistration.groupBy({
+        by: ['groupKey'],
+        where: { eventId: event.id, groupKey: { not: null } },
+      });
+      groupName = `第${groupCount.length + 1}组`;
+    }
+
+    const groupKey = randomUUID();
+    await this.prisma.eventRegistration.updateMany({
+      where: { id: { in: dto.registration_ids } },
+      data: { groupKey, groupName },
+    });
+    const { memberCount, perPerson } = await this.recalcSplitGroup(
+      event.id,
+      groupKey,
+      event.participationFeeCents ?? 0,
+    );
+    return {
+      groupKey,
+      groupName,
+      memberCount,
+      perPersonCents: perPerson,
+      registrationIds: dto.registration_ids,
+    };
+  }
+
+  /**
+   * 活动分组列表：GET /events/:id/groups。
+   * 返回该活动所有组（组名/人数/成员），供家长加入组队时选择。
+   */
+  async listGroups(eventId: string) {
+    const event = await this.prisma.event.findUnique({
+      where: { id: eventId },
+      select: { id: true, groupSize: true, feeMode: true },
+    });
+    if (!event) throw new NotFoundException(`活动不存在：${eventId}`);
+    const regs = await this.prisma.eventRegistration.findMany({
+      where: {
+        eventId,
+        groupKey: { not: null },
+        status: { in: ['REGISTERED', 'WAITLISTED'] },
+      },
+      include: {
+        student: { select: { id: true, name: true } },
+        parent: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    const map = new Map<
+      string,
+      {
+        groupKey: string;
+        groupName: string | null;
+        members: Array<{
+          registrationId: string;
+          studentName: string;
+          parentName: string;
+        }>;
+      }
+    >();
+    for (const r of regs) {
+      const key = r.groupKey!;
+      if (!map.has(key)) {
+        map.set(key, { groupKey: key, groupName: r.groupName, members: [] });
+      }
+      map.get(key)!.members.push({
+        registrationId: r.id,
+        studentName: r.student?.name ?? '—',
+        parentName: r.parent?.name ?? '—',
+      });
+    }
+    return [...map.values()].map((g) => ({
+      ...g,
+      memberCount: g.members.length,
+      isFull: event.groupSize != null && g.members.length >= event.groupSize,
+    }));
   }
 
   /**
@@ -523,10 +730,25 @@ export class EventsService {
   async cancelRegistration(user: RequestUser, registrationId: string) {
     const reg = await this.assertRegistrationAccessible(user, registrationId);
     if (reg.status === 'CANCELLED') return reg;
-    return this.prisma.eventRegistration.update({
+    const updated = await this.prisma.eventRegistration.update({
       where: { id: registrationId },
       data: { status: 'CANCELLED' },
     });
+    // SPLIT 组有人退出：重算该组剩余成员费用
+    if (reg.groupKey) {
+      const event = await this.prisma.event.findUnique({
+        where: { id: reg.eventId },
+        select: { feeMode: true, participationFeeCents: true },
+      });
+      if (
+        event?.feeMode === 'SPLIT' &&
+        event.participationFeeCents != null &&
+        event.participationFeeCents > 0
+      ) {
+        await this.recalcSplitGroup(reg.eventId, reg.groupKey, event.participationFeeCents);
+      }
+    }
+    return updated;
   }
 
   /**
@@ -884,6 +1106,8 @@ export class EventsService {
       ticketTotalCents: r.ticketTotalCents,
       participationFeeCents: r.participationFeeCents,
       feeStatus: r.feeStatus,
+      groupKey: r.groupKey,
+      groupName: r.groupName,
       createdAt: r.createdAt,
     }));
   }
