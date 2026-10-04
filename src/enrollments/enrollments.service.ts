@@ -61,7 +61,7 @@ export class EnrollmentsService {
    * 候补路径先对课次行加 FOR UPDATE 锁，避免并发下候补序号重复。
    */
   async enroll(requester: RequestUser, dto: CreateEnrollmentDto) {
-    return this.prisma.$transaction(async (tx) => {
+    const enrollment = await this.prisma.$transaction(async (tx) => {
       const session = await tx.classSession.findUnique({
         where: { id: dto.class_session_id },
         include: { course: true },
@@ -132,6 +132,58 @@ export class EnrollmentsService {
         },
       });
     });
+    // 管理员代报名（含私教课建课自动报名）：通知学员家长 / 成人学员本人
+    if (requester.role === 'ADMIN') {
+      try {
+        await this.notifyEnrollmentCreated(enrollment.id);
+      } catch {
+        /* 通知失败不影响报名结果 */
+      }
+    }
+    return enrollment;
+  }
+
+  /**
+   * 管理员代报名成功通知：发给学员的首选家长（成人学员则为本人）。
+   * 按报名状态组织文案：待支付→催缴；已确认→准时上课；候补→排队位置。
+   */
+  private async notifyEnrollmentCreated(enrollmentId: string): Promise<void> {
+    const enrollment = await this.prisma.enrollment.findUnique({
+      where: { id: enrollmentId },
+      include: {
+        student: { select: { name: true } },
+        classSession: {
+          select: { course: { select: { title: true } } },
+        },
+      },
+    });
+    if (!enrollment) return;
+    const recipientIds = await resolveStudentRecipientUserIds(
+      this.prisma,
+      enrollment.studentId,
+    );
+    if (recipientIds.length === 0) return;
+    const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
+    const who = `【${enrollment.student.name}】`;
+    const course = `《${enrollment.classSession.course.title}》`;
+    let body: string;
+    if (enrollment.status === 'WAITLISTED') {
+      body = `管理员已为${who}报名${course}，当前名额已满，已加入候补队列（第 ${enrollment.waitlistPosition} 位），有名额时会自动转正并通知你。`;
+    } else if (enrollment.status === 'PENDING_PAYMENT') {
+      body = `管理员已为${who}报名${course}，请在 24 小时内完成支付，逾期名额将自动释放。支付入口：${frontendUrl}/me/enrollments`;
+    } else {
+      body = `管理员已为${who}报名${course}，报名已确认，请准时上课。`;
+    }
+    for (const userId of recipientIds) {
+      await this.notifications.notify({
+        userId,
+        type: NotificationType.ENROLLMENT_CREATED,
+        title: '新报名通知',
+        body,
+        sourceType: NotificationSourceType.ENROLLMENT,
+        sourceId: enrollment.id,
+      });
+    }
   }
 
   // ------------------------------------------------------------------ 取消
