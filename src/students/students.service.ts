@@ -25,12 +25,27 @@ export class StudentsService {
   /** GET /admin/students?audience=&campus=&weekday=&q= */
   async search(query: SearchStudentsQuery) {
     const where: Prisma.StudentWhereInput = {};
-    if (query.audience === 'YOUTH') {
-      // 儿童端：有家长（非 SELF）关联的学员
-      where.parentLinks = { some: { relationship: { not: 'SELF' } } };
-    } else if (query.audience === 'ADULT') {
-      // 成人端：学员自己绑定自己（SELF）
-      where.parentLinks = { some: { relationship: 'SELF' } };
+    if (query.audience === 'YOUTH' || query.audience === 'ADULT') {
+      // 受众筛选：有家长关联的按关联类型；无关联的按年龄兜底（18岁为界）
+      const eighteenYearsAgo = new Date();
+      eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
+      if (query.audience === 'YOUTH') {
+        where.OR = [
+          { parentLinks: { some: { relationship: { not: 'SELF' } } } },
+          {
+            parentLinks: { none: {} },
+            dob: { gt: eighteenYearsAgo },
+          },
+        ];
+      } else {
+        where.OR = [
+          { parentLinks: { some: { relationship: 'SELF' } } },
+          {
+            parentLinks: { none: {} },
+            dob: { lte: eighteenYearsAgo },
+          },
+        ];
+      }
     }
     if (query.campus || query.weekday !== undefined || query.term) {
       where.enrollments = {
