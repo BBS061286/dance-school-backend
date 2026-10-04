@@ -1,4 +1,17 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { LocalFileInterceptor, UploadedLocalFile } from '../common/local-upload';
 import { UserRole } from '@prisma/client';
 import { Roles } from '../auth/decorators/roles.decorator';
 import {
@@ -49,6 +62,20 @@ export class InstructorsController {
   @Patch('admin/instructors/:id')
   update(@Param('id') id: string, @Body() dto: UpdateInstructorDto) {
     return this.instructors.update(id, dto);
+  }
+
+  /** 删除老师：DELETE /admin/instructors/:id */
+  @Delete('admin/instructors/:id')
+  remove(@Param('id') id: string) {
+    return this.instructors.remove(id);
+  }
+
+  /** 管理端上传老师头像：POST /admin/instructors/:id/avatar */
+  @Post('admin/instructors/:id/avatar')
+  @UseInterceptors(LocalFileInterceptor())
+  uploadAvatar(@Param('id') id: string, @UploadedFile() file?: UploadedLocalFile) {
+    if (!file) throw new BadRequestException('请上传图片文件');
+    return this.instructors.uploadAvatar(id, file.filename);
   }
 
   /** 分配教师到班级：POST /admin/course-sessions/:id/assign-instructor */

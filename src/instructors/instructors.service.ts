@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -143,6 +144,45 @@ export class InstructorsService {
         })
       : [];
     return { ...instructor, reviews };
+  }
+
+  /** 删除老师：DELETE /admin/instructors/:id
+   * 有未结束班级时拒绝（先停用或重新分配）；无负担时删除 Instructor + User */
+  async remove(id: string) {
+    const instructor = await this.prisma.instructor.findUnique({
+      where: { id },
+      include: {
+        classSessions: {
+          where: { status: { notIn: ['COMPLETED', 'CANCELLED'] } },
+          select: { id: true },
+        },
+      },
+    });
+    if (!instructor) throw new NotFoundException('教师不存在');
+    if (instructor.classSessions.length > 0) {
+      throw new BadRequestException(
+        `该老师还有 ${instructor.classSessions.length} 个未结束班级，请先重新分配或停用`,
+      );
+    }
+    await this.prisma.$transaction([
+      this.prisma.instructor.delete({ where: { id } }),
+      this.prisma.user.delete({ where: { id: instructor.userId } }),
+    ]);
+    return { ok: true };
+  }
+
+  /** 管理端上传老师头像：POST /admin/instructors/:id/avatar */
+  async uploadAvatar(id: string, filename: string) {
+    const instructor = await this.prisma.instructor.findUnique({
+      where: { id },
+      select: { id: true, userId: true },
+    });
+    if (!instructor) throw new NotFoundException('教师不存在');
+    return this.prisma.user.update({
+      where: { id: instructor.userId },
+      data: { avatarUrl: `uploads/${filename}` },
+      select: { id: true, name: true, avatarUrl: true },
+    });
   }
 
   /** 教师课时统计：GET /admin/instructors/:id/stats?term= — 按学期分组 + 按月课时 */
