@@ -145,6 +145,7 @@ export class StudentsService {
                       select: {
                         id: true,
                         course: { select: { id: true, title: true } },
+                        campus: { select: { id: true, name: true } },
                       },
                     },
                   },
