@@ -21,6 +21,7 @@ import { MakeupModule } from './makeup/makeup.module';
 import { MessagingModule } from './messaging/messaging.module';
 import { NotificationCenterModule } from './notifications/notification-center.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { MigrationService } from './database/migration.service';
 import { RemindersModule } from './reminders/reminders.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { StudentsModule } from './students/students.module';
@@ -60,6 +61,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     // 全局守卫：先鉴权（@Public 标记的路由放行），再做角色校验
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    MigrationService, // 开机自动跑 prisma/manual-migrations/*.sql
   ],
 })
 export class AppModule {}
