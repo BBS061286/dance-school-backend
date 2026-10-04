@@ -338,6 +338,90 @@ export class EventsService {
     return registration;
   }
 
+  /**
+   * 加购门票（POST /event-registrations/:id/add-tickets）。
+   * 报名后多次加购：每笔独立 TICKET 订单；累加 registration.ticketQuantity/ticketTotalCents。
+   */
+  async addTickets(user: RequestUser, registrationId: string, quantity: number) {
+    const reg = await this.assertRegistrationAccessible(user, registrationId);
+    const event = await this.prisma.event.findUnique({
+      where: { id: reg.eventId },
+    });
+    if (!event) throw new NotFoundException(`活动不存在：${reg.eventId}`);
+    if (!event.requiresTicket) {
+      throw new BadRequestException('该活动无需购票');
+    }
+    if (event.status !== 'SCHEDULED') {
+      throw new ConflictException('该活动当前不可购票');
+    }
+    if (event.maxTicketsPerRegistration && quantity > event.maxTicketsPerRegistration) {
+      throw new BadRequestException(`单次加购最多 ${event.maxTicketsPerRegistration} 张`);
+    }
+    const totalCents = quantity * (event.ticketPriceCents ?? 0);
+    const order = await this.createTicketOrder(reg.parentId, reg.id, totalCents);
+    await this.prisma.eventRegistration.update({
+      where: { id: reg.id },
+      data: {
+        ticketQuantity: { increment: quantity },
+        ticketTotalCents: { increment: totalCents },
+      },
+    });
+    return order;
+  }
+
+  /**
+   * 购票看板（GET /admin/events/:id/tickets，ADMIN）。
+   * 汇总 + 按学员明细（购票张数/金额/已付/待付/订单列表）。
+   */
+  async ticketDashboard(eventId: string) {
+    const event = await this.prisma.event.findUnique({ where: { id: eventId } });
+    if (!event) throw new NotFoundException(`活动不存在：${eventId}`);
+
+    const regs = await this.prisma.eventRegistration.findMany({
+      where: { eventId, ticketQuantity: { gt: 0 } },
+      include: {
+        student: { select: { id: true, name: true } },
+        parent: { select: { id: true, name: true, phone: true } },
+        registrationOrders: {
+          where: { itemType: 'TICKET' },
+          include: { order: true },
+        },
+      },
+      orderBy: { ticketQuantity: 'desc' },
+    });
+
+    const rows = regs.map((r) => {
+      const orders = r.registrationOrders.map((ro) => ({
+        id: ro.order.id,
+        amountCents: ro.order.amountCents,
+        status: ro.order.status,
+        createdAt: ro.order.createdAt,
+      }));
+      const paidCents = orders
+        .filter((o) => o.status === 'PAID')
+        .reduce((s, o) => s + o.amountCents, 0);
+      const totalCents = r.ticketTotalCents ?? 0;
+      return {
+        registrationId: r.id,
+        student: r.student,
+        parent: r.parent,
+        quantity: r.ticketQuantity ?? 0,
+        totalCents,
+        paidCents,
+        unpaidCents: totalCents - paidCents,
+        orders,
+      };
+    });
+
+    const summary = {
+      totalQuantity: rows.reduce((s, r) => s + r.quantity, 0),
+      buyerCount: rows.length,
+      totalCents: rows.reduce((s, r) => s + r.totalCents, 0),
+      paidCents: rows.reduce((s, r) => s + r.paidCents, 0),
+    };
+    return { summary, rows };
+  }
+
   /** 取消活动报名（学员端归属 / ADMIN） */
   async cancelRegistration(user: RequestUser, registrationId: string) {
     const reg = await this.assertRegistrationAccessible(user, registrationId);

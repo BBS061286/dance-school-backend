@@ -123,6 +123,13 @@ export class IssueFeeDto {
   participation_fee_cents: number;
 }
 
+/** 加购门票：{ quantity } */
+export class AddTicketsDto {
+  @IsInt()
+  @Min(1)
+  quantity: number;
+}
+
 /** 学员缴费：门票款或参赛费 */
 export class PayEventRegistrationDto {
   @IsEnum(EventRegistrationItemType)

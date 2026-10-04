@@ -13,7 +13,7 @@ import { UserRole } from '@prisma/client';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RequestUser } from '../common/types';
-import { AdminRegisterEventDto, CreateEventDto, CreateNoticeDto, IssueFeeDto, PayEventRegistrationDto, RegisterEventDto } from './dto/events.dto';
+import { AddTicketsDto, AdminRegisterEventDto, CreateEventDto, CreateNoticeDto, IssueFeeDto, PayEventRegistrationDto, RegisterEventDto } from './dto/events.dto';
 import { EventsService } from './events.service';
 
 /**
@@ -45,6 +45,13 @@ export class EventsController {
   @Get('admin/events/:id/registrations/export')
   exportRegistrations(@Param('id') id: string) {
     return this.events.exportRegistrationsCsv(id);
+  }
+
+  /** 购票看板（ADMIN）：GET /admin/events/:id/tickets */
+  @Roles(UserRole.ADMIN)
+  @Get('admin/events/:id/tickets')
+  ticketDashboard(@Param('id') id: string) {
+    return this.events.ticketDashboard(id);
   }
 
   /** 发布活动/比赛（ADMIN） */
@@ -118,6 +125,17 @@ export class EventsController {
     @Body() dto: IssueFeeDto,
   ) {
     return this.events.issueFee(req.user.id, id, dto);
+  }
+
+  /** 加购门票：{ quantity }（学员端归属 / ADMIN） */
+  @Roles(UserRole.PARENT, UserRole.ADULT_STUDENT, UserRole.ADMIN)
+  @Post('event-registrations/:id/add-tickets')
+  addTickets(
+    @Request() req: { user: RequestUser },
+    @Param('id') id: string,
+    @Body() dto: AddTicketsDto,
+  ) {
+    return this.events.addTickets(req.user, id, dto.quantity);
   }
 
   /** 学员缴费（门票款或参赛费）：{ item_type }，走 billing 流程 */
