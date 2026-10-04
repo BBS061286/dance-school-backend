@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  AttendanceStatus,
   NotificationSourceType,
   NotificationType,
   OccurrenceStatus,
@@ -591,6 +592,53 @@ export class AttendanceService {
       },
       include: { instructor: { include: { user: { select: { name: true } } } } },
     });
+  }
+
+  /**
+   * 管理员查看某课次出勤名单（分组：已确认/待确认/缺席/补课）。
+   * GET /admin/occurrences/:id/attendance
+   */
+  async adminOccurrenceAttendance(occurrenceId: string) {
+    const occurrence = await this.prisma.sessionOccurrence.findUnique({
+      where: { id: occurrenceId },
+    });
+    if (!occurrence) throw new NotFoundException(`课次不存在：${occurrenceId}`);
+    const enrollments = await this.prisma.enrollment.findMany({
+      where: {
+        classSessionId: occurrence.classSessionId,
+        status: { in: ['CONFIRMED', 'PENDING_PAYMENT'] },
+      },
+      include: {
+        student: { select: { id: true, name: true } },
+      },
+      orderBy: { enrolledAt: 'asc' },
+    });
+    const records = await this.prisma.attendanceRecord.findMany({
+      where: { sessionOccurrenceId: occurrenceId },
+    });
+    const recordByEnrollment = new Map(records.map((r) => [r.enrollmentId, r]));
+    const confirmed: unknown[] = [];
+    const pending: unknown[] = [];
+    const absent: unknown[] = [];
+    for (const enrollment of enrollments) {
+      const record = recordByEnrollment.get(enrollment.id) ?? null;
+      const entry = { enrollment, record };
+      if (record?.status === AttendanceStatus.CONFIRMED) confirmed.push(entry);
+      else if (record?.status === AttendanceStatus.PENDING_CONFIRMATION)
+        pending.push(entry);
+      else absent.push(entry);
+    }
+    return {
+      occurrence: {
+        id: occurrence.id,
+        session_number: occurrence.sessionNumber,
+        date: occurrence.date,
+        status: occurrence.status,
+      },
+      confirmed,
+      pending,
+      absent,
+    };
   }
 
   // ---------------------------------------------------------------- 教师打卡（§6.18）

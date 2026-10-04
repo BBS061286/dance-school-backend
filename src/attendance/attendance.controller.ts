@@ -67,6 +67,13 @@ export class AttendanceController {
     return this.attendance.adminCheckIn(req.user, id, dto);
   }
 
+  /** 管理员查看某课次出勤名单（ADMIN） */
+  @Roles(UserRole.ADMIN)
+  @Get('admin/occurrences/:id/attendance')
+  adminOccurrenceAttendance(@Param('id') id: string) {
+    return this.attendance.adminOccurrenceAttendance(id);
+  }
+
   /** 管理员替老师打卡（ADMIN） */
   @Roles(UserRole.ADMIN)
   @Post('admin/instructor-checkins')

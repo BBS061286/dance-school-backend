@@ -194,8 +194,9 @@ export class TeacherService {
       const record = recordByEnrollment.get(enrollment.id) ?? null;
       const entry = { enrollment, record };
       if (record?.status === AttendanceStatus.CONFIRMED) confirmed.push(entry);
-      else if (record) pending.push(entry);
-      else absent.push(entry);
+      else if (record?.status === AttendanceStatus.PENDING_CONFIRMATION)
+        pending.push(entry);
+      else absent.push(entry); // 含 ABSENT 记录与无记录
     }
     // 补课学员：预约到本节课的 MakeupBooking
     const makeup = await this.prisma.makeupBooking.findMany({
