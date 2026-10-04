@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Request } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Request } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RequestUser } from '../common/types';
@@ -79,6 +79,24 @@ export class AttendanceController {
   @Post('admin/instructor-checkins')
   adminInstructorCheckIn(@Body() dto: AdminInstructorCheckInDto) {
     return this.attendance.adminInstructorCheckIn(dto);
+  }
+
+  /** 安排代课：POST /admin/occurrences/:id/substitute */
+  @Roles(UserRole.ADMIN)
+  @Post('admin/occurrences/:id/substitute')
+  assignSubstitute(
+    @Request() req: { user: RequestUser },
+    @Param('id') id: string,
+    @Body() dto: { instructor_id: string; reason?: string },
+  ) {
+    return this.attendance.assignSubstitute(id, dto, req.user.id);
+  }
+
+  /** 取消代课：DELETE /admin/occurrences/:id/substitute */
+  @Roles(UserRole.ADMIN)
+  @Delete('admin/occurrences/:id/substitute')
+  removeSubstitute(@Param('id') id: string) {
+    return this.attendance.removeSubstitute(id);
   }
 
   /** 管理员确认待确认打卡（ADMIN） */

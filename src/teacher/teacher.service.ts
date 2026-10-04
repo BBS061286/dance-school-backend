@@ -101,6 +101,34 @@ export class TeacherService {
     });
   }
 
+  /** GET /me/instructor/substitutes：我代课的课次 */
+  async substitutes(userId: string) {
+    const instructor = await this.requireInstructor(userId);
+    return this.prisma.sessionOccurrence.findMany({
+      where: {
+        substituteInstructorId: instructor.id,
+        status: { notIn: ['CANCELLED'] },
+      },
+      include: {
+        classSession: {
+          include: {
+            course: { select: { id: true, title: true, format: true } },
+            campus: { select: { id: true, name: true } },
+            instructor: { include: { user: { select: { name: true } } } },
+            enrollments: {
+              where: { status: { in: ['CONFIRMED', 'PENDING_PAYMENT'] } },
+              include: {
+                student: { select: { id: true, name: true, photoUrl: true } },
+              },
+            },
+          },
+        },
+        substituteInstructor: { include: { user: { select: { name: true } } } },
+      },
+      orderBy: { date: 'asc' },
+    });
+  }
+
   /** GET /me/instructor/extra-lessons：我的 1对1/group 私课安排 */
   async extraLessons(userId: string) {
     const instructor = await this.requireInstructor(userId);

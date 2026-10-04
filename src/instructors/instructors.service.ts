@@ -208,7 +208,13 @@ export class InstructorsService {
           },
         },
         occurrences: {
-          select: { id: true, date: true, status: true, timeRange: true },
+          select: {
+            id: true,
+            date: true,
+            status: true,
+            timeRange: true,
+            substituteInstructorId: true,
+          },
         },
         _count: { select: { enrollments: true } },
       },
@@ -244,12 +250,34 @@ export class InstructorsService {
     for (const sess of sessions) {
       for (const occ of sess.occurrences) {
         if (occ.status === 'CANCELLED') continue;
+        // 有代课老师的课次不计入原老师课时（计入代课老师）
+        if (occ.substituteInstructorId) continue;
         const month = new Date(occ.date).toISOString().slice(0, 7); // YYYY-MM
         if (!byMonth.has(month)) byMonth.set(month, { month, sessions: 0, hours: 0 });
         const g = byMonth.get(month)!;
         g.sessions += 1;
         g.hours += parseHours(occ.timeRange);
       }
+    }
+    // 加上该老师代课的课次
+    const subOccurrences = await this.prisma.sessionOccurrence.findMany({
+      where: {
+        substituteInstructorId: id,
+        status: { notIn: ['CANCELLED'] },
+        ...(termId
+          ? { classSession: { course: { termId } } }
+          : {}),
+      },
+      select: { id: true, date: true, timeRange: true },
+    });
+    let subSessions = 0;
+    for (const occ of subOccurrences) {
+      const month = new Date(occ.date).toISOString().slice(0, 7);
+      if (!byMonth.has(month)) byMonth.set(month, { month, sessions: 0, hours: 0 });
+      const g = byMonth.get(month)!;
+      g.sessions += 1;
+      g.hours += parseHours(occ.timeRange);
+      subSessions += 1;
     }
     const monthly = [...byMonth.values()].sort((a, b) => b.month.localeCompare(a.month));
     return {
@@ -258,6 +286,7 @@ export class InstructorsService {
       totalSessions: sessions.length,
       totalCheckins: checkinCount,
       totalHours: monthly.reduce((a, b) => a + b.hours, 0),
+      substituteSessions: subSessions,
     };
   }
 

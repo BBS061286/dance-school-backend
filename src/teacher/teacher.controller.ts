@@ -54,6 +54,12 @@ export class TeacherController {
   }
 
   @Roles(UserRole.INSTRUCTOR)
+  @Get('me/instructor/substitutes')
+  substitutes(@Request() req: { user: RequestUser }) {
+    return this.teacher.substitutes(req.user.id);
+  }
+
+  @Roles(UserRole.INSTRUCTOR)
   @Get('me/instructor/extra-lessons')
   extraLessons(@Request() req: { user: RequestUser }) {
     return this.teacher.extraLessons(req.user.id);

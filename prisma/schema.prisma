@@ -332,6 +332,7 @@ model Instructor {
   classSessions   ClassSession[]
   checkins        InstructorCheckin[]
   extraLessons    ExtraLessonRequest[] @relation("LessonInstructor")
+  substituteOccurrences SessionOccurrence[] @relation("SubstituteTeaching")
 }
 
 // ---------------------------- 2.3 Student -----------------------------------
@@ -741,6 +742,12 @@ model SessionOccurrence {
   postponedFrom           SessionOccurrence? @relation("PostponeChain")
   // v2.1 F1：本节上课时间，覆盖 Course.timeRange；为空时取课程默认时间；提醒计算使用此值
   timeRange               String?
+  // 代课：某节原老师来不了时指定代课老师（仅影响本节）
+  substituteInstructorId  String?
+  substituteInstructor    Instructor? @relation("SubstituteTeaching", fields: [substituteInstructorId], references: [id])
+  substituteReason        String?
+  substituteAssignedAt    DateTime?
+  substituteAssignedById  String?
 
   attendanceRecords AttendanceRecord[]
   missedBookings    MakeupBooking[] @relation("MissedOccurrence")

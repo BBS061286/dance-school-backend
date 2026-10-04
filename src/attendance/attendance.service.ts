@@ -160,7 +160,14 @@ export class AttendanceService {
       where: { id: sessionId },
       include: {
         course: { select: { id: true, title: true } },
-        occurrences: { orderBy: { sessionNumber: 'asc' } },
+        occurrences: {
+          include: {
+            substituteInstructor: {
+              include: { user: { select: { id: true, name: true } } },
+            },
+          },
+          orderBy: { sessionNumber: 'asc' },
+        },
       },
     });
     if (!session || session.courseId !== courseId) {
@@ -591,6 +598,82 @@ export class AttendanceService {
         time: dto.time,
       },
       include: { instructor: { include: { user: { select: { name: true } } } } },
+    });
+  }
+
+  /** 安排代课：POST /admin/occurrences/:id/substitute */
+  async assignSubstitute(
+    occurrenceId: string,
+    dto: { instructor_id: string; reason?: string },
+    adminId: string,
+  ) {
+    const occurrence = await this.prisma.sessionOccurrence.findUnique({
+      where: { id: occurrenceId },
+      include: {
+        classSession: {
+          include: {
+            course: { select: { title: true } },
+            instructor: { include: { user: { select: { name: true } } } },
+          },
+        },
+      },
+    });
+    if (!occurrence) throw new NotFoundException('课次不存在');
+    const substitute = await this.prisma.instructor.findUnique({
+      where: { id: dto.instructor_id },
+      include: { user: { select: { id: true, name: true } } },
+    });
+    if (!substitute) throw new NotFoundException('代课老师不存在');
+    // 不能给自己代自己的课
+    if (occurrence.classSession.instructorId === dto.instructor_id) {
+      throw new BadRequestException('代课老师不能是原任课老师');
+    }
+    const updated = await this.prisma.sessionOccurrence.update({
+      where: { id: occurrenceId },
+      data: {
+        substituteInstructorId: dto.instructor_id,
+        substituteReason: dto.reason || null,
+        substituteAssignedAt: new Date(),
+        substituteAssignedById: adminId,
+      },
+      include: {
+        substituteInstructor: { include: { user: { select: { name: true } } } },
+      },
+    });
+    // 通知代课老师
+    try {
+      const dateStr = new Date(occurrence.date).toISOString().slice(0, 10);
+      await this.prisma.notification.create({
+        data: {
+          userId: substitute.user.id,
+          type: 'CLASS_REMINDER',
+          title: '代课安排通知',
+          body: `${occurrence.classSession.course.title} ${dateStr}（第${occurrence.sessionNumber}节）安排您代课${dto.reason ? `，原因：${dto.reason}` : ''}`,
+          sourceType: 'COURSE',
+          sourceId: occurrence.classSession.courseId,
+          channels: ['IN_APP'],
+        },
+      });
+    } catch {
+      /* 通知失败不影响代课安排 */
+    }
+    return updated;
+  }
+
+  /** 取消代课：DELETE /admin/occurrences/:id/substitute */
+  async removeSubstitute(occurrenceId: string) {
+    const occurrence = await this.prisma.sessionOccurrence.findUnique({
+      where: { id: occurrenceId },
+    });
+    if (!occurrence) throw new NotFoundException('课次不存在');
+    return this.prisma.sessionOccurrence.update({
+      where: { id: occurrenceId },
+      data: {
+        substituteInstructorId: null,
+        substituteReason: null,
+        substituteAssignedAt: null,
+        substituteAssignedById: null,
+      },
     });
   }
 
