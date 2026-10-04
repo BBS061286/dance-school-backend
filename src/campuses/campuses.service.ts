@@ -42,6 +42,27 @@ export class CampusesService {
   }
 
   /** GET /admin/campuses/:id：校区详情 */
+  /** 校区已用教室：GET /admin/campuses/:id/rooms（该校区所有班次用过的教室去重，按最近使用排序） */
+  async campusRooms(id: string): Promise<string[]> {
+    await this.ensureExists(id);
+    const rows = await this.prisma.classSession.findMany({
+      where: { campusId: id, room: { not: null } },
+      select: { room: true, startTime: true },
+      orderBy: { startTime: 'desc' },
+      take: 500,
+    });
+    const seen = new Set<string>();
+    const rooms: string[] = [];
+    for (const r of rows) {
+      const name = (r.room ?? '').trim();
+      if (name && !seen.has(name)) {
+        seen.add(name);
+        rooms.push(name);
+      }
+    }
+    return rooms;
+  }
+
   async detail(id: string) {    const campus = await this.prisma.campus.findUnique({
       where: { id },
       include: {

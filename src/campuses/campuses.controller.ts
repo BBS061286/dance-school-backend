@@ -46,6 +46,12 @@ export class CampusesController {
     return this.campuses.campusCourses(id, term || undefined);
   }
 
+  /** 校区已用教室：GET /admin/campuses/:id/rooms */
+  @Get('admin/campuses/:id/rooms')
+  campusRooms(@Param('id') id: string) {
+    return this.campuses.campusRooms(id);
+  }
+
   /** 校区详情：GET /admin/campuses/:id */
   @Get('admin/campuses/:id')
   detail(@Param('id') id: string) {
