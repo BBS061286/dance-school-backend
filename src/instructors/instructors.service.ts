@@ -437,27 +437,51 @@ export class InstructorsService {
   async assignInstructor(sessionId: string, dto: AssignInstructorDto) {
     const session = await this.prisma.classSession.findUnique({
       where: { id: sessionId },
-      include: { course: { select: { id: true, title: true } } },
+      include: {
+        course: { select: { id: true, title: true } },
+        instructor: { select: { id: true, userId: true, user: { select: { name: true } } } },
+      },
     });
     if (!session) throw new NotFoundException('班级不存在');
     const instructor = await this.prisma.instructor.findUnique({
       where: { id: dto.instructor_id },
-      select: { id: true, userId: true },
+      select: { id: true, userId: true, user: { select: { name: true } } },
     });
     if (!instructor) throw new NotFoundException('教师不存在');
+    const oldInstructor = session.instructor;
+    const isReassign = oldInstructor && oldInstructor.id !== instructor.id;
     const updated = await this.prisma.classSession.update({
       where: { id: sessionId },
       data: { instructorId: instructor.id },
     });
+    // 通知新老师
     await this.notifications.notify({
       userId: instructor.userId,
       type: NotificationType.INSTRUCTOR_ASSIGNMENT,
-      title: '课程分配更新',
-      body: `你被分配到《${session.course.title}》任教。`,
+      title: isReassign ? '课程交接' : '课程分配更新',
+      body: isReassign
+        ? `《${session.course.title}》${this.fmtSessionTime(session)} 已交接给你任教（原 ${oldInstructor.user?.name ?? '老师'}）。`
+        : `你被分配到《${session.course.title}》任教。`,
       sourceType: NotificationSourceType.COURSE,
       sourceId: session.course.id,
     });
+    // 通知原老师（被换下）
+    if (isReassign && oldInstructor) {
+      await this.notifications.notify({
+        userId: oldInstructor.userId,
+        type: NotificationType.INSTRUCTOR_ASSIGNMENT,
+        title: '课程交接',
+        body: `《${session.course.title}》${this.fmtSessionTime(session)} 已交接给 ${instructor.user?.name ?? '新老师'} 任教。`,
+        sourceType: NotificationSourceType.COURSE,
+        sourceId: session.course.id,
+      });
+    }
     return updated;
+  }
+
+  private fmtSessionTime(s: { startTime: Date }): string {
+    const d = new Date(s.startTime);
+    return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   }
 
   /**
