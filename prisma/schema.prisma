@@ -590,6 +590,8 @@ model Event {
   // 比赛报名费：PER_PERSON=按人收全额，SPLIT=总费用按组均摊
   participationFeeCents Int?
   feeMode             String?
+  // 多票种：[{ name, priceCents, minQuantity?, validUntil? }]
+  ticketTiers         Json?
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
 
@@ -610,6 +612,8 @@ model EventRegistration {
   // 6.6 购票/参赛费扩展
   ticketQuantity     Int?
   ticketTotalCents   Int?
+  // 票种购票累计：{ [tierName]: { quantity, totalCents } }
+  ticketTierBreakdown Json?
   participationFeeCents Int?
   // SPLIT 均摊模式下同组报名共享一个 groupKey
   groupKey           String?

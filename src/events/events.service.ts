@@ -51,8 +51,11 @@ export class EventsService {
       });
       if (!campus) throw new NotFoundException(`校区不存在：${dto.campus_id}`);
     }
-    if (dto.requires_ticket && (dto.ticket_price_cents ?? 0) <= 0) {
-      throw new BadRequestException('需要购票的活动必须设置票单价');
+    if (dto.requires_ticket) {
+      const hasTiers = dto.ticket_tiers && dto.ticket_tiers.length > 0;
+      if (!hasTiers && (dto.ticket_price_cents ?? 0) <= 0) {
+        throw new BadRequestException('需要购票的活动必须设置票单价或至少一个票种');
+      }
     }
     return this.prisma.event.create({
       data: {
@@ -71,7 +74,67 @@ export class EventsService {
         maxTicketsPerRegistration: dto.max_tickets_per_registration ?? null,
         participationFeeCents: dto.participation_fee_cents ?? null,
         feeMode: dto.fee_mode ?? null,
+        ...(dto.ticket_tiers && dto.ticket_tiers.length > 0
+          ? { ticketTiers: dto.ticket_tiers as unknown as object }
+          : {}),
       },
+    });
+  }
+
+  /**
+   * 票种解析：根据 tierName 在 event.ticketTiers 里找票种，校验有效期与起购数。
+   * 返回 { tierName, priceCents }。tierName 为空时用默认票价（兼容旧逻辑）。
+   */
+  private resolveTicketTier(
+    event: { ticketTiers: unknown; ticketPriceCents: number | null },
+    tierName: string | undefined,
+    quantity: number,
+  ): { tierName: string | null; priceCents: number } {
+    if (!tierName) {
+      return { tierName: null, priceCents: event.ticketPriceCents ?? 0 };
+    }
+    const tiers = (event.ticketTiers as Array<{
+      name: string;
+      price_cents: number;
+      min_quantity?: number;
+      valid_until?: string;
+    }> | null) ?? [];
+    const tier = tiers.find((t) => t.name === tierName);
+    if (!tier) {
+      throw new BadRequestException(`票种不存在：${tierName}`);
+    }
+    if (tier.valid_until && new Date(tier.valid_until).getTime() < Date.now()) {
+      throw new BadRequestException(`票种「${tierName}」已过优惠期`);
+    }
+    if (tier.min_quantity != null && quantity < tier.min_quantity) {
+      throw new BadRequestException(`票种「${tierName}」最少购买 ${tier.min_quantity} 张`);
+    }
+    return { tierName: tier.name, priceCents: tier.price_cents };
+  }
+
+  /** 记录票种购票累计（EventRegistration.ticketTierBreakdown） */
+  private async recordTierPurchase(
+    registrationId: string,
+    tierName: string | null,
+    quantity: number,
+    totalCents: number,
+  ) {
+    const key = tierName ?? '标准票';
+    const reg = await this.prisma.eventRegistration.findUnique({
+      where: { id: registrationId },
+      select: { ticketTierBreakdown: true },
+    });
+    const breakdown = (
+      (reg?.ticketTierBreakdown as Record<string, { quantity: number; totalCents: number }> | null) ?? {}
+    );
+    const cur = breakdown[key] ?? { quantity: 0, totalCents: 0 };
+    breakdown[key] = {
+      quantity: cur.quantity + quantity,
+      totalCents: cur.totalCents + totalCents,
+    };
+    await this.prisma.eventRegistration.update({
+      where: { id: registrationId },
+      data: { ticketTierBreakdown: breakdown },
     });
   }
 
@@ -162,6 +225,7 @@ export class EventsService {
 
     let ticketQuantity: number | null = null;
     let ticketTotalCents: number | null = null;
+    let ticketTierName: string | null = null;
     if (event.requiresTicket) {
       const qty = dto.ticket_quantity ?? 1;
       if (
@@ -172,8 +236,10 @@ export class EventsService {
           `单次报名最多购票 ${event.maxTicketsPerRegistration} 张`,
         );
       }
+      const tier = this.resolveTicketTier(event, dto.tier_name, qty);
+      ticketTierName = tier.tierName;
       ticketQuantity = qty;
-      ticketTotalCents = (event.ticketPriceCents ?? 0) * qty;
+      ticketTotalCents = tier.priceCents * qty;
     }
 
     // 同一用户同一活动重复报名 → 幂等返回已有记录
@@ -199,7 +265,8 @@ export class EventsService {
     });
 
     if (event.requiresTicket && (ticketTotalCents ?? 0) > 0) {
-      await this.createTicketOrder(user.id, registration.id, ticketTotalCents!);
+      await this.createTicketOrder(user.id, registration.id, ticketTotalCents!, ticketTierName);
+      await this.recordTierPurchase(registration.id, ticketTierName, ticketQuantity!, ticketTotalCents!);
     }
     return registration;
   }
@@ -245,9 +312,10 @@ export class EventsService {
       }
     }
 
-    // 票务逻辑照抄 register
+    // 票务逻辑照抄 register（含多票种）
     let ticketQuantity: number | null = null;
     let ticketTotalCents: number | null = null;
+    let ticketTierName: string | null = null;
     if (event.requiresTicket) {
       const qty = dto.ticket_quantity ?? 1;
       if (
@@ -258,8 +326,10 @@ export class EventsService {
           `单次报名最多购票 ${event.maxTicketsPerRegistration} 张`,
         );
       }
+      const tier = this.resolveTicketTier(event, dto.tier_name, qty);
+      ticketTierName = tier.tierName;
       ticketQuantity = qty;
-      ticketTotalCents = (event.ticketPriceCents ?? 0) * qty;
+      ticketTotalCents = tier.priceCents * qty;
     }
 
     // 同一活动同学员重复报名 → 幂等返回已有记录
@@ -284,7 +354,8 @@ export class EventsService {
     });
 
     if (event.requiresTicket && (ticketTotalCents ?? 0) > 0) {
-      await this.createTicketOrder(parentId, registration.id, ticketTotalCents!);
+      await this.createTicketOrder(parentId, registration.id, ticketTotalCents!, ticketTierName);
+      await this.recordTierPurchase(registration.id, ticketTierName, ticketQuantity!, ticketTotalCents!);
     }
 
     // 比赛报名费自动计算（feeStatus 保持 NOT_SET，缴费走 issue-fee/pay 流程）
@@ -342,7 +413,7 @@ export class EventsService {
    * 加购门票（POST /event-registrations/:id/add-tickets）。
    * 报名后多次加购：每笔独立 TICKET 订单；累加 registration.ticketQuantity/ticketTotalCents。
    */
-  async addTickets(user: RequestUser, registrationId: string, quantity: number) {
+  async addTickets(user: RequestUser, registrationId: string, quantity: number, tierName?: string) {
     const reg = await this.assertRegistrationAccessible(user, registrationId);
     const event = await this.prisma.event.findUnique({
       where: { id: reg.eventId },
@@ -357,8 +428,9 @@ export class EventsService {
     if (event.maxTicketsPerRegistration && quantity > event.maxTicketsPerRegistration) {
       throw new BadRequestException(`单次加购最多 ${event.maxTicketsPerRegistration} 张`);
     }
-    const totalCents = quantity * (event.ticketPriceCents ?? 0);
-    const order = await this.createTicketOrder(reg.parentId, reg.id, totalCents);
+    const tier = this.resolveTicketTier(event, tierName, quantity);
+    const totalCents = quantity * tier.priceCents;
+    const order = await this.createTicketOrder(reg.parentId, reg.id, totalCents, tier.tierName);
     await this.prisma.eventRegistration.update({
       where: { id: reg.id },
       data: {
@@ -366,6 +438,7 @@ export class EventsService {
         ticketTotalCents: { increment: totalCents },
       },
     });
+    await this.recordTierPurchase(reg.id, tier.tierName, quantity, totalCents);
     return order;
   }
 
@@ -419,7 +492,31 @@ export class EventsService {
       totalCents: rows.reduce((s, r) => s + r.totalCents, 0),
       paidCents: rows.reduce((s, r) => s + r.paidCents, 0),
     };
-    return { summary, rows };
+
+    // 按票种汇总（优先用 ticketTierBreakdown；老数据无 breakdown 的归入"标准票"）
+    const byTierMap = new Map<string, { quantity: number; totalCents: number }>();
+    for (const r of regs) {
+      const bd = (r.ticketTierBreakdown as Record<string, { quantity: number; totalCents: number }> | null) ?? null;
+      if (bd && Object.keys(bd).length > 0) {
+        for (const [name, v] of Object.entries(bd)) {
+          const cur = byTierMap.get(name) ?? { quantity: 0, totalCents: 0 };
+          cur.quantity += v.quantity ?? 0;
+          cur.totalCents += v.totalCents ?? 0;
+          byTierMap.set(name, cur);
+        }
+      } else if ((r.ticketQuantity ?? 0) > 0) {
+        const cur = byTierMap.get('标准票') ?? { quantity: 0, totalCents: 0 };
+        cur.quantity += r.ticketQuantity ?? 0;
+        cur.totalCents += r.ticketTotalCents ?? 0;
+        byTierMap.set('标准票', cur);
+      }
+    }
+    const byTier = [...byTierMap.entries()].map(([tierName, v]) => ({
+      tierName,
+      quantity: v.quantity,
+      totalCents: v.totalCents,
+    }));
+    return { summary: { ...summary, byTier }, rows };
   }
 
   /** 取消活动报名（学员端归属 / ADMIN） */
@@ -584,6 +681,7 @@ export class EventsService {
     parentId: string,
     registrationId: string,
     ticketTotalCents: number,
+    tierName?: string | null,
   ) {
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.create({
@@ -596,7 +694,7 @@ export class EventsService {
             create: [
               {
                 eventRegistrationId: registrationId,
-                description: '活动门票款',
+                description: tierName ? `活动门票款（${tierName}）` : '活动门票款',
                 amountCents: ticketTotalCents,
               },
             ],

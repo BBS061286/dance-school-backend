@@ -135,7 +135,7 @@ export class EventsController {
     @Param('id') id: string,
     @Body() dto: AddTicketsDto,
   ) {
-    return this.events.addTickets(req.user, id, dto.quantity);
+    return this.events.addTickets(req.user, id, dto.quantity, dto.tier_name);
   }
 
   /** 学员缴费（门票款或参赛费）：{ item_type }，走 billing 流程 */
