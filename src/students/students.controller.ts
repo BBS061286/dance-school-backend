@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, Request, UploadedFile, UseInterceptors, BadRequestException } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query, Request, UploadedFile, UseInterceptors, BadRequestException } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { LocalFileInterceptor, UploadedLocalFile } from '../common/local-upload';
 import { ParentCreateStudentDto } from './dto/parent-create-student.dto';
@@ -89,6 +89,16 @@ export class StudentsController {
     @Param('id') id: string,
   ) {
     return this.students.parentGetStudent(req.user.id, id);
+  }
+
+  /** 家长移除孩子关联：DELETE /me/students/:id */
+  @Roles(UserRole.PARENT)
+  @Delete('me/students/:id')
+  parentRemoveStudent(
+    @Request() req: { user: { id: string } },
+    @Param('id') id: string,
+  ) {
+    return this.students.parentRemoveStudent(req.user.id, id);
   }
 
   /** 家长给孩子上传照片：POST /me/students/:id/photo */

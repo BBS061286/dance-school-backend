@@ -289,6 +289,30 @@ export class StudentsService {
     };
   }
 
+  /** 家长移除孩子关联：DELETE /me/students/:id */
+  async parentRemoveStudent(parentId: string, studentId: string) {
+    const link = await this.prisma.parentStudentLink.findUnique({
+      where: { parentId_studentId: { parentId, studentId } },
+    });
+    if (!link) throw new ForbiddenException('该学员不属于您');
+    // 检查是否有未完成的报名
+    const activeEnrollments = await this.prisma.enrollment.count({
+      where: {
+        studentId,
+        status: { in: ['CONFIRMED', 'PENDING_PAYMENT', 'WAITLISTED'] },
+      },
+    });
+    if (activeEnrollments > 0) {
+      throw new BadRequestException(
+        `该学员还有 ${activeEnrollments} 个有效报名，请先联系学校处理后再移除`,
+      );
+    }
+    await this.prisma.parentStudentLink.delete({
+      where: { parentId_studentId: { parentId, studentId } },
+    });
+    return { ok: true };
+  }
+
   /** 家长给孩子上传照片：POST /me/students/:id/photo */
   async uploadPhoto(parentId: string, studentId: string, filename: string) {
     // 校验该学员属于该家长
