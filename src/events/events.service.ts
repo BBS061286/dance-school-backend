@@ -388,15 +388,12 @@ export class EventsService {
       include: { parentLinks: true },
     });
     if (!student) throw new NotFoundException(`学员不存在：${dto.student_id}`);
-    if (student.parentLinks.length === 0) {
-      throw new BadRequestException('该学员未绑定账号（无家长关联），请先绑定后再代报名');
-    }
-    // 优先：成人学员自己（SELF）> 首选联系人 > 第一个
+    // 优先：成人学员自己（SELF）> 首选联系人 > 第一个；无家长关联时用管理员ID兜底（允许代报名）
     const link =
       student.parentLinks.find((l) => l.relationship === Relationship.SELF) ??
       student.parentLinks.find((l) => l.isPrimaryContact) ??
       student.parentLinks[0];
-    const parentId = link.parentId;
+    const parentId = link?.parentId ?? adminId;
 
     // 容量检查
     if (event.capacity != null) {
