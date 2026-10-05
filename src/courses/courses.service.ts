@@ -145,6 +145,7 @@ export class CoursesService {
       select: {
         id: true,
         title: true,
+        description: true,
         format: true,
         audience: true,
         skillLevel: true,
@@ -235,6 +236,7 @@ export class CoursesService {
       select: {
         id: true,
         title: true,
+        description: true,
         format: true,
         audience: true,
         skillLevel: true,
