@@ -103,9 +103,9 @@ export class ExtraLessonsController {
   @Patch('admin/extra-lesson-requests/:id/campus')
   updateRequestCampus(
     @Param('id') id: string,
-    @Body() dto: { campus_id: string | null },
+    @Body() dto: { campus_id: string | null; location?: string | null },
   ) {
-    return this.lessons.updateRequestCampus(id, dto.campus_id);
+    return this.lessons.updateRequestCampus(id, dto.campus_id, dto.location ?? null);
   }
 
   /** 管理员直接排课（ADMIN） */

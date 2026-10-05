@@ -411,7 +411,7 @@ export class ExtraLessonsService {
   }
 
   /** 更新加课申请的校区 */
-  async updateRequestCampus(requestId: string, campusId: string | null) {
+  async updateRequestCampus(requestId: string, campusId: string | null, location: string | null = null) {
     const request = await this.prisma.extraLessonRequest.findUnique({
       where: { id: requestId },
     });
@@ -422,7 +422,7 @@ export class ExtraLessonsService {
     }
     return this.prisma.extraLessonRequest.update({
       where: { id: requestId },
-      data: { campusId },
+      data: { campusId, ...(location !== null ? { location } : {}) },
       include: { campus: { select: { id: true, name: true } } },
     });
   }
