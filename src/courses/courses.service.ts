@@ -192,6 +192,7 @@ export class CoursesService {
       return {
         id: c.id,
         title: c.title,
+        description: c.description,
         format: c.format,
         audience: c.audience,
         level: c.skillLevel,
@@ -279,6 +280,7 @@ export class CoursesService {
       return {
         id: c.id,
         title: c.title,
+        description: c.description,
         format: c.format,
         audience: c.audience,
         level: c.skillLevel,
