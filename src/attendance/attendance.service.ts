@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import {
   AttendanceStatus,
+  CancelRequestStatus,
   NotificationSourceType,
   NotificationType,
   OccurrenceStatus,
@@ -48,10 +49,12 @@ export class AttendanceService {
     }
 
     const weekdays = [...course.weekdays].sort((a, b) => a - b);
+    const skipDates = await this.holidayDateSet();
     const dates = this.computeTermDates(
       new Date(course.startDate),
       weekdays,
       course.totalSessions,
+      skipDates,
     );
 
     const existingMax =
@@ -87,11 +90,13 @@ export class AttendanceService {
   /**
    * 按 weekdays 从 startDate 当周起依次生成 total 个上课日期。
    * weekdays 使用 JS 约定（0=周日..6=周六），date 均为 UTC 午夜（@db.Date）。
+   * skipDates：要跳过的日期（YYYY-MM-DD，如学校假期），跳过后自动往后延，保证总数不变。
    */
   private computeTermDates(
     startDate: Date,
     weekdays: number[],
     total: number,
+    skipDates?: Set<string>,
   ): Date[] {
     const dates: Date[] = [];
     const startDay = startDate.getUTCDay();
@@ -114,6 +119,8 @@ export class AttendanceService {
           ),
         );
         if (d >= startDate) {
+          const key = d.toISOString().slice(0, 10);
+          if (skipDates?.has(key)) continue; // 假期跳过，自动顺延
           dates.push(d);
           if (dates.length >= total) break;
         }
@@ -127,11 +134,13 @@ export class AttendanceService {
   /**
    * 顺延日期：从参考日期之后，找下一个落在 course.weekdays 的日期。
    * 若课程没有固定 weekday（私教等），默认往后顺延 7 天。
+   * skipDates 中的日期（假期）会自动跳过。
    */
   private nextWeekdayDate(
     fromDate: Date,
     weekdays: number[] | undefined,
     fallbackWeekday: number,
+    skipDates?: Set<string>,
   ): Date {
     const base = new Date(
       Date.UTC(
@@ -141,10 +150,12 @@ export class AttendanceService {
       ),
     );
     const wds = weekdays?.length ? [...weekdays].sort((a, b) => a - b) : [fallbackWeekday];
-    for (let i = 1; i <= 14; i++) {
+    for (let i = 1; i <= 60; i++) {
       const d = new Date(base);
       d.setUTCDate(base.getUTCDate() + i);
-      if (wds.includes(d.getUTCDay())) return d;
+      if (!wds.includes(d.getUTCDay())) continue;
+      if (skipDates?.has(d.toISOString().slice(0, 10))) continue;
+      return d;
     }
     // 兜底：+7 天
     const d = new Date(base);
@@ -207,6 +218,7 @@ export class AttendanceService {
 
     const { classSession } = occurrence;
     const course = classSession.course;
+    const skipDates = await this.holidayDateSet();
 
     const result = await this.prisma.$transaction(async (tx) => {
       type NewOcc = {
@@ -248,6 +260,7 @@ export class AttendanceService {
             last ? new Date(last.date) : new Date(occurrence.date),
             course.weekdays,
             new Date(occurrence.date).getUTCDay(),
+            skipDates,
           );
         }
         const created = await tx.sessionOccurrence.create({
@@ -299,6 +312,243 @@ export class AttendanceService {
   /** 直接取消不顺延（§6.1），同样发送通知 */
   async cancel(occurrenceId: string, dto: CancelOccurrenceDto) {
     return this.cancelAndPostpone(occurrenceId, { ...dto, postpone: false });
+  }
+
+  // ---------------------------------------------------------------- 假期日历
+
+  /** 假期日期集合（YYYY-MM-DD），供排课/顺延跳过 */
+  async holidayDateSet(): Promise<Set<string>> {
+    const holidays = await this.prisma.holiday.findMany({ select: { date: true } });
+    return new Set(
+      holidays.map((h) => new Date(h.date).toISOString().slice(0, 10)),
+    );
+  }
+
+  /** 假期列表（管理端） */
+  async listHolidays() {
+    return this.prisma.holiday.findMany({
+      orderBy: { date: 'asc' },
+      include: { createdBy: { select: { name: true } } },
+    });
+  }
+
+  /** 新增假期（管理端） */
+  async createHoliday(
+    dto: { name: string; date: string; note?: string },
+    userId: string,
+  ) {
+    const date = new Date(dto.date);
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException(`日期格式非法：${dto.date}`);
+    }
+    // 同一天不重复
+    const dayStart = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+    const exists = await this.prisma.holiday.findFirst({
+      where: { date: dayStart },
+    });
+    if (exists) throw new ConflictException(`该日期已有假期：${exists.name}`);
+    return this.prisma.holiday.create({
+      data: {
+        name: dto.name,
+        date: dayStart,
+        note: dto.note,
+        createdById: userId,
+      },
+    });
+  }
+
+  /** 删除假期（管理端） */
+  async deleteHoliday(id: string) {
+    return this.prisma.holiday.delete({ where: { id } });
+  }
+
+  /**
+   * 检查撞假期：已排的 SCHEDULED 课次落在假期日期上。
+   * 返回课次 + 假期名，供管理端一键顺延。
+   */
+  async checkHolidayConflicts() {
+    const holidays = await this.prisma.holiday.findMany({
+      orderBy: { date: 'asc' },
+    });
+    if (holidays.length === 0) return [];
+    const dates = holidays.map(
+      (h) =>
+        new Date(
+          Date.UTC(
+            new Date(h.date).getUTCFullYear(),
+            new Date(h.date).getUTCMonth(),
+            new Date(h.date).getUTCDate(),
+          ),
+        ),
+    );
+    const occurrences = await this.prisma.sessionOccurrence.findMany({
+      where: { date: { in: dates }, status: 'SCHEDULED' },
+      include: {
+        classSession: {
+          include: {
+            course: { select: { title: true } },
+            campus: { select: { name: true } },
+          },
+        },
+      },
+      orderBy: { date: 'asc' },
+    });
+    const nameByDate = new Map(
+      holidays.map((h) => [new Date(h.date).toISOString().slice(0, 10), h.name]),
+    );
+    return occurrences.map((o) => ({
+      id: o.id,
+      sessionNumber: o.sessionNumber,
+      date: o.date,
+      timeRange: o.timeRange,
+      courseTitle: o.classSession.course.title,
+      campusName: o.classSession.campus.name,
+      holidayName: nameByDate.get(new Date(o.date).toISOString().slice(0, 10)),
+    }));
+  }
+
+  // ---------------------------------------------------------------- 停课申请（教师发起、管理端审批）
+
+  /** 教师申请停课：只能申请自己任教班级的未来课次 */
+  async requestCancel(
+    occurrenceId: string,
+    userId: string,
+    dto: { reason: string; postpone?: boolean },
+  ) {
+    const instructor = await this.prisma.instructor.findUnique({
+      where: { userId },
+    });
+    if (!instructor) throw new ForbiddenException('未找到教师档案');
+    const occurrence = await this.prisma.sessionOccurrence.findUnique({
+      where: { id: occurrenceId },
+      include: { classSession: { include: { course: { select: { title: true } } } } },
+    });
+    if (!occurrence) throw new NotFoundException('课次不存在');
+    if (occurrence.classSession.instructorId !== instructor.id) {
+      throw new ForbiddenException('只能申请自己任教班级的课次');
+    }
+    if (occurrence.status === 'CANCELLED' || occurrence.status === 'POSTPONED') {
+      throw new ConflictException('该课次已取消，无需申请');
+    }
+    if (new Date(occurrence.date) < new Date(new Date().toISOString().slice(0, 10))) {
+      throw new BadRequestException('只能申请未来课次的停课');
+    }
+    const pending = await this.prisma.occurrenceCancelRequest.findFirst({
+      where: { occurrenceId, status: 'PENDING' },
+    });
+    if (pending) throw new ConflictException('该课次已有待审批的停课申请');
+    if (!dto.reason?.trim()) throw new BadRequestException('请填写停课原因');
+    return this.prisma.occurrenceCancelRequest.create({
+      data: {
+        occurrenceId,
+        instructorId: instructor.id,
+        reason: dto.reason.trim(),
+        postpone: dto.postpone !== false,
+      },
+      include: {
+        occurrence: { select: { sessionNumber: true, date: true } },
+      },
+    });
+  }
+
+  /** 教师查看自己的停课申请 */
+  async myCancelRequests(userId: string) {
+    const instructor = await this.prisma.instructor.findUnique({
+      where: { userId },
+    });
+    if (!instructor) throw new ForbiddenException('未找到教师档案');
+    return this.prisma.occurrenceCancelRequest.findMany({
+      where: { instructorId: instructor.id },
+      include: {
+        occurrence: {
+          select: {
+            sessionNumber: true,
+            date: true,
+            timeRange: true,
+            classSession: {
+              select: { course: { select: { title: true } } },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /** 停课申请列表（管理端） */
+  async listCancelRequests(status?: string) {
+    const where =
+      status && ['PENDING', 'APPROVED', 'REJECTED'].includes(status)
+        ? { status: status as CancelRequestStatus }
+        : {};
+    return this.prisma.occurrenceCancelRequest.findMany({
+      where,
+      include: {
+        occurrence: {
+          select: {
+            sessionNumber: true,
+            date: true,
+            timeRange: true,
+            status: true,
+            classSession: {
+              select: {
+                course: { select: { title: true } },
+                campus: { select: { name: true } },
+              },
+            },
+          },
+        },
+        instructor: { include: { user: { select: { name: true } } } },
+        reviewedBy: { select: { name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /** 审批通过：执行取消+顺延（复用 cancelAndPostpone，自动通知家长/老师） */
+  async approveCancelRequest(
+    id: string,
+    reviewerId: string,
+    dto: { postpone?: boolean; postpone_date?: string; review_note?: string },
+  ) {
+    const req = await this.prisma.occurrenceCancelRequest.findUnique({
+      where: { id },
+    });
+    if (!req) throw new NotFoundException('申请不存在');
+    if (req.status !== 'PENDING') throw new ConflictException('该申请已处理');
+    const result = await this.cancelAndPostpone(req.occurrenceId, {
+      cancel_reason: req.reason,
+      postpone: dto.postpone !== false,
+      postpone_date: dto.postpone_date,
+    });
+    await this.prisma.occurrenceCancelRequest.update({
+      where: { id },
+      data: {
+        status: 'APPROVED',
+        reviewedById: reviewerId,
+        reviewedAt: new Date(),
+        reviewNote: dto.review_note,
+      },
+    });
+    return result;
+  }
+
+  /** 驳回停课申请（管理端） */
+  async rejectCancelRequest(id: string, reviewerId: string, reviewNote?: string) {
+    const req = await this.prisma.occurrenceCancelRequest.findUnique({
+      where: { id },
+    });
+    if (!req) throw new NotFoundException('申请不存在');
+    if (req.status !== 'PENDING') throw new ConflictException('该申请已处理');
+    return this.prisma.occurrenceCancelRequest.update({
+      where: { id },
+      data: {
+        status: 'REJECTED',
+        reviewedById: reviewerId,
+        reviewedAt: new Date(),
+        reviewNote,
+      },
+    });
   }
 
   /**

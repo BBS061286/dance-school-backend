@@ -323,6 +323,8 @@ model User {
   eventRegistrations EventRegistration[]
   extraLessonRequestsCreated ExtraLessonRequest[] @relation("ExtraLessonCreator")
   attendanceConfirmed AttendanceRecord[]   @relation("AttendanceConfirmer")
+  holidaysCreated   Holiday[]              @relation("HolidayCreator")
+  cancelRequestsReviewed OccurrenceCancelRequest[] @relation("CancelRequestReviewer")
 }
 
 // --------------------------- 2.2 Instructor ---------------------------------
@@ -349,6 +351,7 @@ model Instructor {
   checkins        InstructorCheckin[]
   extraLessons    ExtraLessonRequest[] @relation("LessonInstructor")
   substituteOccurrences SessionOccurrence[] @relation("SubstituteTeaching")
+  cancelRequests  OccurrenceCancelRequest[]
 }
 
 // ---------------------------- 2.3 Student -----------------------------------
@@ -786,6 +789,46 @@ model SessionOccurrence {
   missedBookings    MakeupBooking[] @relation("MissedOccurrence")
   makeupBookings    MakeupBooking[] @relation("MakeupOccurrence")
   instructorCheckins InstructorCheckin[]
+  cancelRequests    OccurrenceCancelRequest[]
+}
+
+// --------------------------- 6.1b 学校假期日历 ---------------------------------
+model Holiday {
+  id          String   @id @default(uuid())
+  name        String   // 如 感恩节、圣诞节
+  date        DateTime @db.Date
+  note        String?
+  createdAt   DateTime @default(now())
+  createdById String?
+  createdBy   User?    @relation("HolidayCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([date])
+  @@map("Holiday")
+}
+
+// --------------------------- 6.1c 课次停课申请 ---------------------------------
+enum CancelRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model OccurrenceCancelRequest {
+  id           String              @id @default(uuid())
+  occurrenceId String
+  occurrence   SessionOccurrence   @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
+  instructorId String
+  instructor   Instructor          @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+  reason       String
+  postpone     Boolean             @default(true) // 是否希望顺延补上
+  status       CancelRequestStatus @default(PENDING)
+  reviewedById String?
+  reviewedBy   User?               @relation("CancelRequestReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime?
+  reviewNote   String?
+  createdAt    DateTime            @default(now())
+
+  @@map("OccurrenceCancelRequest")
 }
 
 // ---------------------- 6.2 AttendanceRecord ---------------------------------

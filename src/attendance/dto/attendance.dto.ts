@@ -17,6 +17,50 @@ export class CancelOccurrenceDto {
   postpone_date?: string;
 }
 
+/** 新增假期 */
+export class CreateHolidayDto {
+  /** 假期名称，如 感恩节 */
+  @IsString()
+  name: string;
+
+  /** 日期 YYYY-MM-DD */
+  @IsDateString({}, { message: 'date 格式不正确（YYYY-MM-DD）' })
+  date: string;
+
+  @IsOptional()
+  @IsString()
+  note?: string;
+}
+
+/** 教师申请停课 */
+export class RequestCancelDto {
+  /** 停课原因 */
+  @IsString()
+  reason: string;
+
+  /** 是否希望顺延补上（默认 true） */
+  @IsOptional()
+  @IsBoolean()
+  postpone?: boolean;
+}
+
+/** 审批停课申请 */
+export class ReviewCancelRequestDto {
+  /** 是否顺延（默认 true） */
+  @IsOptional()
+  @IsBoolean()
+  postpone?: boolean;
+
+  /** 手动指定补课日期（YYYY-MM-DD），不填则自动顺延 */
+  @IsOptional()
+  @IsDateString({}, { message: 'postpone_date 格式不正确（YYYY-MM-DD）' })
+  postpone_date?: string;
+
+  @IsOptional()
+  @IsString()
+  review_note?: string;
+}
+
 /** 学员 / 管理员打卡 */
 export class CheckInDto {
   /** 报名 id */

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Request } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query, Request } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RequestUser } from '../common/types';
@@ -7,7 +7,10 @@ import {
   AdminInstructorCheckInDto,
   CancelOccurrenceDto,
   CheckInDto,
+  CreateHolidayDto,
   InstructorCheckInDto,
+  RequestCancelDto,
+  ReviewCancelRequestDto,
 } from './dto/attendance.dto';
 import { CheckInByCodeDto } from './dto/checkin-code.dto';
 
@@ -43,6 +46,88 @@ export class AttendanceController {
   @Post('admin/occurrences/:id/cancel')
   cancel(@Param('id') id: string, @Body() dto: CancelOccurrenceDto) {
     return this.attendance.cancel(id, dto);
+  }
+
+  // ------------------------------------------------------------ 假期日历（ADMIN）
+
+  /** 假期列表 */
+  @Roles(UserRole.ADMIN)
+  @Get('admin/holidays')
+  listHolidays() {
+    return this.attendance.listHolidays();
+  }
+
+  /** 新增假期：{ name, date, note? } */
+  @Roles(UserRole.ADMIN)
+  @Post('admin/holidays')
+  createHoliday(
+    @Request() req: { user: RequestUser },
+    @Body() dto: CreateHolidayDto,
+  ) {
+    return this.attendance.createHoliday(dto, req.user.id);
+  }
+
+  /** 删除假期 */
+  @Roles(UserRole.ADMIN)
+  @Delete('admin/holidays/:id')
+  deleteHoliday(@Param('id') id: string) {
+    return this.attendance.deleteHoliday(id);
+  }
+
+  /** 检查撞假期：已排课次落在假期上 */
+  @Roles(UserRole.ADMIN)
+  @Get('admin/holidays/conflicts')
+  checkHolidayConflicts() {
+    return this.attendance.checkHolidayConflicts();
+  }
+
+  // ------------------------------------------------------------ 停课申请
+
+  /** 教师申请停课：{ reason, postpone? } */
+  @Roles(UserRole.INSTRUCTOR)
+  @Post('me/instructor/occurrences/:id/cancel-request')
+  requestCancel(
+    @Request() req: { user: RequestUser },
+    @Param('id') id: string,
+    @Body() dto: RequestCancelDto,
+  ) {
+    return this.attendance.requestCancel(id, req.user.id, dto);
+  }
+
+  /** 教师查看自己的停课申请 */
+  @Roles(UserRole.INSTRUCTOR)
+  @Get('me/instructor/cancel-requests')
+  myCancelRequests(@Request() req: { user: RequestUser }) {
+    return this.attendance.myCancelRequests(req.user.id);
+  }
+
+  /** 停课申请列表（ADMIN）：?status=PENDING */
+  @Roles(UserRole.ADMIN)
+  @Get('admin/occurrence-cancel-requests')
+  listCancelRequests(@Query('status') status?: string) {
+    return this.attendance.listCancelRequests(status);
+  }
+
+  /** 审批通过并执行取消顺延（ADMIN）：{ postpone?, postpone_date?, review_note? } */
+  @Roles(UserRole.ADMIN)
+  @Post('admin/occurrence-cancel-requests/:id/approve')
+  approveCancelRequest(
+    @Request() req: { user: RequestUser },
+    @Param('id') id: string,
+    @Body() dto: ReviewCancelRequestDto,
+  ) {
+    return this.attendance.approveCancelRequest(id, req.user.id, dto);
+  }
+
+  /** 驳回停课申请（ADMIN）：{ review_note? } */
+  @Roles(UserRole.ADMIN)
+  @Post('admin/occurrence-cancel-requests/:id/reject')
+  rejectCancelRequest(
+    @Request() req: { user: RequestUser },
+    @Param('id') id: string,
+    @Body() dto: ReviewCancelRequestDto,
+  ) {
+    return this.attendance.rejectCancelRequest(id, req.user.id, dto.review_note);
   }
 
   /** 学员自助打卡（家长 / 成人学员）：{ enrollment_id } */
