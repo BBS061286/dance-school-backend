@@ -161,6 +161,35 @@ export class StudentsService {
     return student;
   }
 
+  /** 家长查看孩子详情：GET /me/students/:id */
+  async parentGetStudent(parentId: string, studentId: string) {
+    const link = await this.prisma.parentStudentLink.findUnique({
+      where: { parentId_studentId: { parentId, studentId } },
+      include: { student: true },
+    });
+    if (!link) throw new ForbiddenException('该学员不属于您');
+    const st = link.student;
+    // 计算年龄
+    let age: number | null = null;
+    if (st.dob) {
+      const now = new Date();
+      const dob = new Date(st.dob);
+      age = now.getFullYear() - dob.getFullYear();
+      const m = now.getMonth() - dob.getMonth();
+      if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) age--;
+    }
+    return {
+      id: st.id,
+      name: st.name,
+      dob: st.dob,
+      age,
+      gender: st.gender,
+      photoUrl: st.photoUrl,
+      medicalNotes: st.medicalNotes,
+      relationship: link.relationship,
+    };
+  }
+
   /** 家长给孩子上传照片：POST /me/students/:id/photo */
   async uploadPhoto(parentId: string, studentId: string, filename: string) {
     // 校验该学员属于该家长

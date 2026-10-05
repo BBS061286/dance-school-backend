@@ -81,6 +81,16 @@ export class StudentsController {
     return this.students.parentCreate(req.user.id, dto);
   }
 
+  /** 家长查看孩子详情：GET /me/students/:id */
+  @Roles(UserRole.PARENT)
+  @Get('me/students/:id')
+  parentGetStudent(
+    @Request() req: { user: { id: string } },
+    @Param('id') id: string,
+  ) {
+    return this.students.parentGetStudent(req.user.id, id);
+  }
+
   /** 家长给孩子上传照片：POST /me/students/:id/photo */
   @Roles(UserRole.PARENT)
   @Post('me/students/:id/photo')
