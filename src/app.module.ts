@@ -25,6 +25,7 @@ import { MigrationService } from './database/migration.service';
 import { RemindersModule } from './reminders/reminders.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { StudentsModule } from './students/students.module';
+import { DemoModule } from './demo/demo.module';
 import { TeacherModule } from './teacher/teacher.module';
 import { UsersModule } from './users/users.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
@@ -51,6 +52,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     MessagingModule, // D5：私信
     DocumentsModule, // D5：文件签署
     StudentsModule, // D5：学员查询
+    DemoModule,
     CoursesModule, // D5：课程创建
     InstructorsModule, // D5：教师管理
     CampusesModule,
