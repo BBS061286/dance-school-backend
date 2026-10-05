@@ -1,5 +1,7 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Request, UploadedFile, UseInterceptors, BadRequestException } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
+import { LocalFileInterceptor, UploadedLocalFile } from '../common/local-upload';
+import { ParentCreateStudentDto } from './dto/parent-create-student.dto';
 import { Transform } from 'class-transformer';
 import {
   IsIn,
@@ -67,6 +69,29 @@ export class StudentsController {
   @Post('admin/students')
   adminCreate(@Body() dto: AdminCreateStudentDto) {
     return this.students.adminCreate(dto);
+  }
+
+  /** 家长自助添加孩子：POST /me/students */
+  @Roles(UserRole.PARENT)
+  @Post('me/students')
+  parentCreate(
+    @Request() req: { user: { id: string } },
+    @Body() dto: ParentCreateStudentDto,
+  ) {
+    return this.students.parentCreate(req.user.id, dto);
+  }
+
+  /** 家长给孩子上传照片：POST /me/students/:id/photo */
+  @Roles(UserRole.PARENT)
+  @Post('me/students/:id/photo')
+  @UseInterceptors(LocalFileInterceptor())
+  uploadPhoto(
+    @Request() req: { user: { id: string } },
+    @Param('id') id: string,
+    @UploadedFile() file?: UploadedLocalFile,
+  ) {
+    if (!file) throw new BadRequestException('请上传图片文件');
+    return this.students.uploadPhoto(req.user.id, id, file.filename);
   }
 
   /** 学员详情：GET /admin/students/:id/detail */

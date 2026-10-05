@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -9,6 +10,7 @@ import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminCreateStudentDto } from './dto/admin-create-student.dto';
+import { ParentCreateStudentDto } from './dto/parent-create-student.dto';
 
 export interface SearchStudentsQuery {
   audience?: 'YOUTH' | 'ADULT';
@@ -131,6 +133,45 @@ export class StudentsService {
       return { user, student };
     });
     return { student: result.student, userId: result.user.id, tempPassword };
+  }
+
+  /** 家长自助添加孩子：POST /me/students */
+  async parentCreate(parentId: string, dto: ParentCreateStudentDto) {
+    const parent = await this.prisma.user.findUnique({ where: { id: parentId } });
+    if (!parent || parent.role !== UserRole.PARENT) {
+      throw new ForbiddenException('仅家长账号可添加孩子');
+    }
+    const student = await this.prisma.student.create({
+      data: {
+        name: dto.name.trim(),
+        dob: new Date(dto.birthdate),
+        gender: dto.gender ?? null,
+        medicalNotes: dto.medicalNotes?.trim() || null,
+        parentLinks: {
+          create: {
+            parentId,
+            relationship: dto.relationship ?? 'GUARDIAN',
+            isPrimaryContact: true,
+            canPay: true,
+          },
+        },
+      },
+      include: { parentLinks: true },
+    });
+    return student;
+  }
+
+  /** 家长给孩子上传照片：POST /me/students/:id/photo */
+  async uploadPhoto(parentId: string, studentId: string, filename: string) {
+    // 校验该学员属于该家长
+    const link = await this.prisma.parentStudentLink.findUnique({
+      where: { parentId_studentId: { parentId, studentId } },
+    });
+    if (!link) throw new ForbiddenException('该学员不属于您');
+    return this.prisma.student.update({
+      where: { id: studentId },
+      data: { photoUrl: `/uploads/${filename}` },
+    });
   }
 
   /** GET /admin/students?audience=&campus=&weekday=&q= */
