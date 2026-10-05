@@ -229,6 +229,14 @@ enum ExtraLessonSlotStatus {
   DECLINED
 }
 
+enum ExtraLessonRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  IN_PROGRESS
+  DONE
+}
+
 enum ParticipantRole {
   PARENT
   ADULT_STUDENT
@@ -849,6 +857,7 @@ model ExtraLessonRequest {
   createdById        String
   createdBy          User                 @relation("ExtraLessonCreator", fields: [createdById], references: [id])
   adminNote          String?
+  status             ExtraLessonRequestStatus @default(PENDING)
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
 

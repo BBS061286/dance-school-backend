@@ -321,6 +321,118 @@ export class ExtraLessonsService {
     return updated;
   }
 
+  /** 通过加课申请 → APPROVED，通知老师去排时段 */
+  async approveRequest(requestId: string) {
+    const request = await this.prisma.extraLessonRequest.findUnique({
+      where: { id: requestId },
+      include: {
+        student: { select: { name: true } },
+        instructor: { include: { user: { select: { id: true, name: true } } } },
+      },
+    });
+    if (!request) throw new NotFoundException('私教单不存在');
+    if (request.status !== 'PENDING')
+      throw new BadRequestException('该申请已处理，无需重复审批');
+
+    const updated = await this.prisma.extraLessonRequest.update({
+      where: { id: requestId },
+      data: { status: 'APPROVED' },
+    });
+
+    // 通知老师去排时段
+    if (request.instructor?.user?.id) {
+      try {
+        await this.prisma.notification.create({
+          data: {
+            userId: request.instructor.user.id,
+            type: 'EXTRA_LESSON_UPDATE',
+            title: '加课申请已通过',
+            body: `学员 ${request.student.name} 的加课申请已通过，请尽快安排私教时段`,
+            sourceType: 'EXTRA_LESSON_SLOT',
+            sourceId: requestId,
+            channels: ['IN_APP'],
+          },
+        });
+      } catch { /* 忽略 */ }
+    }
+    return updated;
+  }
+
+  /** 拒绝加课申请 → REJECTED，通知家长/学员 */
+  async rejectRequest(requestId: string, reason: string) {
+    const request = await this.prisma.extraLessonRequest.findUnique({
+      where: { id: requestId },
+      include: {
+        student: {
+          select: {
+            name: true,
+            parentLinks: {
+              include: { parent: { select: { id: true } } },
+              take: 1,
+            },
+          },
+        },
+      },
+    });
+    if (!request) throw new NotFoundException('私教单不存在');
+    if (request.status !== 'PENDING')
+      throw new BadRequestException('该申请已处理，无需重复审批');
+    if (!reason?.trim()) throw new BadRequestException('请填写拒绝原因');
+
+    const updated = await this.prisma.extraLessonRequest.update({
+      where: { id: requestId },
+      data: { status: 'REJECTED', adminNote: reason.trim() },
+    });
+
+    // 通知家长（首个关联家长）
+    const parentId = request.student.parentLinks[0]?.parent?.id;
+    if (parentId) {
+      try {
+        await this.prisma.notification.create({
+          data: {
+            userId: parentId,
+            type: 'EXTRA_LESSON_UPDATE',
+            title: '加课申请未通过',
+            body: `学员 ${request.student.name} 的加课申请未通过：${reason.trim()}`,
+            sourceType: 'EXTRA_LESSON_SLOT',
+            sourceId: requestId,
+            channels: ['IN_APP'],
+          },
+        });
+      } catch { /* 忽略 */ }
+    }
+    return updated;
+  }
+
+  /** 管理员直接排课：创建时段 → 请求进入 IN_PROGRESS */
+  async adminCreateSlots(
+    requestId: string,
+    slots: Array<{ date: string; time: string }>,
+  ) {
+    const request = await this.prisma.extraLessonRequest.findUnique({
+      where: { id: requestId },
+    });
+    if (!request) throw new NotFoundException('私教单不存在');
+    if (!slots?.length) throw new BadRequestException('请至少添加一个时段');
+
+    await this.prisma.$transaction(
+      slots.map((sl) =>
+        this.prisma.extraLessonSlot.create({
+          data: {
+            requestId,
+            date: new Date(sl.date),
+            time: sl.time,
+            status: 'PENDING_ADMIN',
+          },
+        }),
+      ),
+    );
+    return this.prisma.extraLessonRequest.update({
+      where: { id: requestId },
+      data: { status: 'IN_PROGRESS' },
+    });
+  }
+
   async cancelSlot(adminId: string, slotId: string) {
     const slot = await this.loadSlot(slotId);
     this.assertTransitionAllowed(slot.status, 'cancel');

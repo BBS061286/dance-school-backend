@@ -84,6 +84,30 @@ export class ExtraLessonsController {
     return this.lessons.reassignInstructor(id, dto.instructor_id);
   }
 
+  /** 通过加课申请 → APPROVED（ADMIN） */
+  @Roles(UserRole.ADMIN)
+  @Post('admin/extra-lesson-requests/:id/approve')
+  approveRequest(@Param('id') id: string) {
+    return this.lessons.approveRequest(id);
+  }
+
+  /** 拒绝加课申请 → REJECTED（ADMIN） */
+  @Roles(UserRole.ADMIN)
+  @Post('admin/extra-lesson-requests/:id/reject')
+  rejectRequest(@Param('id') id: string, @Body() dto: { reason: string }) {
+    return this.lessons.rejectRequest(id, dto.reason);
+  }
+
+  /** 管理员直接排课（ADMIN） */
+  @Roles(UserRole.ADMIN)
+  @Post('admin/extra-lesson-requests/:id/slots')
+  adminCreateSlots(
+    @Param('id') id: string,
+    @Body() dto: { slots: Array<{ date: string; time: string }> },
+  ) {
+    return this.lessons.adminCreateSlots(id, dto.slots);
+  }
+
   @Post('admin/extra-lesson-slots/:id/approve')
   approveSlot(
     @Request() req: { user: RequestUser },
