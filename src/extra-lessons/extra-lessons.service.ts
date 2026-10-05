@@ -71,6 +71,7 @@ export class ExtraLessonsService {
         instructorId: null,
         content: dto.content,
         location: dto.location,
+        campusId: dto.campus_id,
         slots: dto.slots,
       },
       'STUDENT',
@@ -105,6 +106,7 @@ export class ExtraLessonsService {
         instructorId: dto.instructor_id ?? null,
         content: dto.content,
         location: dto.location,
+        campusId: dto.campus_id,
         slots: dto.slots,
       },
       'ADMIN',
@@ -119,6 +121,7 @@ export class ExtraLessonsService {
       instructorId: string | null;
       content?: string;
       location?: string;
+      campusId?: string;
       slots: ExtraLessonSlotInput[];
     },
     initiatedBy: 'STUDENT' | 'ADMIN',
@@ -132,6 +135,7 @@ export class ExtraLessonsService {
         audience,
         content: input.content ?? null,
         location: input.location ?? null,
+        campusId: input.campusId ?? null,
         initiatedBy,
         instructorId: input.instructorId,
         createdById,
@@ -161,6 +165,7 @@ export class ExtraLessonsService {
       include: {
         slots: { orderBy: { date: 'asc' } },
         student: { select: { id: true, name: true } },
+        campus: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -184,6 +189,7 @@ export class ExtraLessonsService {
         instructor: {
           include: { user: { select: { id: true, name: true } } },
         },
+        campus: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: 'desc' },
     });

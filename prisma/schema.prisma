@@ -408,6 +408,7 @@ model Campus {
   classSessions    ClassSession[]
   events           Event[]
   residentInstructors Instructor[]
+  extraLessonRequests ExtraLessonRequest[]
 }
 
 // ---------------------------- 2.6 Course ------------------------------------
@@ -858,6 +859,8 @@ model ExtraLessonRequest {
   createdBy          User                 @relation("ExtraLessonCreator", fields: [createdById], references: [id])
   adminNote          String?
   status             ExtraLessonRequestStatus @default(PENDING)
+  campusId           String?
+  campus             Campus? @relation(fields: [campusId], references: [id])
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
 

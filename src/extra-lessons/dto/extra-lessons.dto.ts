@@ -39,6 +39,10 @@ export class CreateExtraLessonRequestDto {
   @IsString()
   location?: string;
 
+  @IsOptional()
+  @IsString()
+  campus_id?: string;
+
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
