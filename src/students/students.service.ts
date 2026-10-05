@@ -161,15 +161,14 @@ export class StudentsService {
     return student;
   }
 
-  /** 家长查看孩子详情：GET /me/students/:id */
-  async parentGetStudent(parentId: string, studentId: string) {
+    /** 家长查看孩子详情：GET /me/students/:id?term= */
+  async parentGetStudent(parentId: string, studentId: string, termId?: string) {
     const link = await this.prisma.parentStudentLink.findUnique({
       where: { parentId_studentId: { parentId, studentId } },
       include: { student: true },
     });
     if (!link) throw new ForbiddenException('该学员不属于您');
     const st = link.student;
-    // 计算年龄
     let age: number | null = null;
     if (st.dob) {
       const now = new Date();
@@ -178,48 +177,106 @@ export class StudentsService {
       const m = now.getMonth() - dob.getMonth();
       if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) age--;
     }
-    // 报名课程（按课程类型分组）
-    const enrollments = await this.prisma.enrollment.findMany({
-      where: { studentId, status: { in: ['CONFIRMED', 'PENDING_PAYMENT'] } },
-      include: {
-        classSession: {
-          include: {
-            course: { select: { id: true, title: true, format: true } },
-            campus: { select: { id: true, name: true } },
-            instructor: { include: { user: { select: { name: true } } } },
+
+    // 该孩子有报名的所有学期
+    const termRows = await this.prisma.term.findMany({
+      where: {
+        courses: {
+          some: {
+            classSessions: { some: { enrollments: { some: { studentId } } } },
           },
         },
       },
+      orderBy: { startDate: 'desc' },
     });
+    const now = new Date();
+    const terms = termRows.map((t) => ({
+      id: t.id,
+      name: t.name,
+      isCurrent: now >= t.startDate && now <= t.endDate,
+      isPast: now > t.endDate,
+    }));
+    // 默认学期：当前学期优先，否则最近的
+    let activeTermId = termId ?? terms.find((t) => t.isCurrent)?.id ?? terms[0]?.id ?? null;
 
-    // 考勤统计
-    const attendance = await this.prisma.attendanceRecord.findMany({
-      where: { enrollment: { studentId } },
-      select: { status: true, enrollmentId: true },
-    });
-    const presentCount = attendance.filter((a) => a.status === 'CONFIRMED').length;
-    const absentCount = attendance.filter((a) => a.status === 'ABSENT').length;
-
-    // 缺席明细
-    const absences = await this.prisma.attendanceRecord.findMany({
-      where: { enrollment: { studentId }, status: 'ABSENT' },
+    // 该学期下的报名
+    const where: any = { studentId, status: { in: ['CONFIRMED', 'PENDING_PAYMENT'] } };
+    if (activeTermId) {
+      where.classSession = { course: { termId: activeTermId } };
+    }
+    const enrollments = await this.prisma.enrollment.findMany({
+      where,
       include: {
-        enrollment: {
+        classSession: {
           include: {
-            classSession: {
+            course: { select: { id: true, title: true, format: true, termId: true, totalSessions: true } },
+            campus: { select: { id: true, name: true } },
+            instructor: { include: { user: { select: { name: true } } } },
+            occurrences: {
+              orderBy: { sessionNumber: 'asc' },
               include: {
-                course: { select: { title: true, format: true } },
+                attendanceRecords: {
+                  where: { enrollment: { studentId } },
+                  select: { status: true },
+                },
               },
             },
           },
         },
-        sessionOccurrence: { select: { date: true, sessionNumber: true } },
       },
-      orderBy: { checkedInAt: 'desc' },
-      take: 20,
     });
 
-    // 私教课申请
+    // 考勤总览（该学期）
+    let presentCount = 0;
+    let absentCount = 0;
+    const absences: Array<{ courseTitle: string; format: string; date: string | null; sessionNumber: number | null }> = [];
+
+    const courseCards = enrollments.map((en) => {
+      const cs = en.classSession;
+      const sessions = (cs?.occurrences ?? []).map((occ) => {
+        const rec = occ.attendanceRecords[0];
+        const attStatus = rec?.status ?? null; // CONFIRMED=出勤 ABSENT=缺席 null=未上
+        if (attStatus === 'CONFIRMED') presentCount++;
+        if (attStatus === 'ABSENT') {
+          absentCount++;
+          absences.push({
+            courseTitle: cs?.course?.title ?? '—',
+            format: cs?.course?.format ?? 'GROUP',
+            date: occ.date ? occ.date.toISOString() : null,
+            sessionNumber: occ.sessionNumber,
+          });
+        }
+        return {
+          sessionNumber: occ.sessionNumber,
+          date: occ.date ? occ.date.toISOString().slice(0, 10) : null,
+          attendance: attStatus === 'CONFIRMED' ? 'present' : attStatus === 'ABSENT' ? 'absent' : 'upcoming',
+        };
+      });
+      const doneCount = sessions.filter((x) => x.attendance !== 'upcoming').length;
+      const totalCount = sessions.length || cs?.course?.totalSessions || 0;
+      // 学期是否已结束
+      const termInfo = terms.find((t) => t.id === activeTermId);
+      return {
+        id: en.id,
+        courseTitle: cs?.course?.title ?? '—',
+        format: cs?.course?.format ?? 'GROUP',
+        campus: cs?.campus?.name ?? '—',
+        teacher: cs?.instructor?.user?.name ?? '—',
+        startTime: cs?.startTime,
+        endTime: cs?.endTime,
+        status: en.status,
+        isTermPast: termInfo?.isPast ?? false,
+        progress: { done: doneCount, total: totalCount },
+        sessions,
+      };
+    });
+
+    // 按课程类型分组
+    const group = courseCards.filter((c) => c.format === 'GROUP');
+    const priv = courseCards.filter((c) => c.format === 'PRIVATE');
+    const master = courseCards.filter((c) => c.format === 'MASTER');
+
+    // 私教加课申请（不过滤学期）
     const extraLessons = await this.prisma.extraLessonRequest.findMany({
       where: { studentId },
       include: {
@@ -230,14 +287,6 @@ export class StudentsService {
       take: 10,
     });
 
-    // 按课程类型分组
-    const byFormat: Record<string, typeof enrollments> = { GROUP: [], PRIVATE: [], MASTER: [] };
-    for (const en of enrollments) {
-      const fmt = en.classSession?.course?.format ?? 'GROUP';
-      if (!byFormat[fmt]) byFormat[fmt] = [];
-      byFormat[fmt].push(en);
-    }
-
     return {
       id: st.id,
       name: st.name,
@@ -247,38 +296,11 @@ export class StudentsService {
       photoUrl: st.photoUrl,
       medicalNotes: st.medicalNotes,
       relationship: link.relationship,
-      courses: {
-        group: byFormat.GROUP.map((en) => ({
-          id: en.id,
-          courseTitle: en.classSession?.course?.title ?? '—',
-          campus: en.classSession?.campus?.name ?? '—',
-          teachers: en.classSession?.instructor?.user?.name ? [en.classSession.instructor.user.name] : [],
-          startTime: en.classSession?.startTime,
-          endTime: en.classSession?.endTime,
-          status: en.status,
-        })),
-        private: byFormat.PRIVATE.map((en) => ({
-          id: en.id,
-          courseTitle: en.classSession?.course?.title ?? '—',
-          campus: en.classSession?.campus?.name ?? '—',
-          teachers: en.classSession?.instructor?.user?.name ? [en.classSession.instructor.user.name] : [],
-          status: en.status,
-        })),
-        master: byFormat.MASTER.map((en) => ({
-          id: en.id,
-          courseTitle: en.classSession?.course?.title ?? '—',
-          campus: en.classSession?.campus?.name ?? '—',
-          teachers: en.classSession?.instructor?.user?.name ? [en.classSession.instructor.user.name] : [],
-          status: en.status,
-        })),
-      },
+      terms,
+      activeTermId,
+      courses: { group, private: priv, master },
       attendance: { present: presentCount, absent: absentCount },
-      absences: absences.map((a) => ({
-        courseTitle: a.enrollment?.classSession?.course?.title ?? '—',
-        format: a.enrollment?.classSession?.course?.format ?? 'GROUP',
-        date: a.sessionOccurrence?.date,
-        sessionNumber: a.sessionOccurrence?.sessionNumber,
-      })),
+      absences: absences.slice(0, 20),
       extraLessons: extraLessons.map((r) => ({
         id: r.id,
         type: r.type,
@@ -295,7 +317,6 @@ export class StudentsService {
       where: { parentId_studentId: { parentId, studentId } },
     });
     if (!link) throw new ForbiddenException('该学员不属于您');
-    // 检查是否有未完成的报名
     const activeEnrollments = await this.prisma.enrollment.count({
       where: {
         studentId,

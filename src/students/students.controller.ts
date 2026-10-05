@@ -81,14 +81,15 @@ export class StudentsController {
     return this.students.parentCreate(req.user.id, dto);
   }
 
-  /** 家长查看孩子详情：GET /me/students/:id */
+  /** 家长查看孩子详情：GET /me/students/:id?term= */
   @Roles(UserRole.PARENT)
   @Get('me/students/:id')
   parentGetStudent(
     @Request() req: { user: { id: string } },
     @Param('id') id: string,
+    @Query('term') term?: string,
   ) {
-    return this.students.parentGetStudent(req.user.id, id);
+    return this.students.parentGetStudent(req.user.id, id, term);
   }
 
   /** 家长移除孩子关联：DELETE /me/students/:id */
