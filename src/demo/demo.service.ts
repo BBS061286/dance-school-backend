@@ -101,4 +101,27 @@ export class DemoService {
 
     return { message: '春季演示数据创建成功', courseId: course.id, sessions: 12, present: 8, absent: 2 };
   }
+
+  /** 给课程补课程介绍（演示用） */
+  async seedDescriptions() {
+    const descs: Array<[string, string]> = [
+      ['少儿中国舞', '本课程适合初学者，从基本站姿、手位学起，训练孩子对中国古典舞身韵的基本功，激发孩子对民族舞蹈的兴趣与热爱。'],
+      ['少儿街舞', '零基础友好！从律动、节奏感练起，学习 Hip-hop 基础动作，释放孩子的表现力与自信，课堂氛围轻松活泼。'],
+      ['少儿芭蕾', '专业芭蕾启蒙，训练正确的身体姿态与柔韧性，从把杆基础到中间组合，培养优雅气质，打好扎实基本功。'],
+      ['私教一对一·古典舞', '一对一专属定制，针对学员个人情况强化古典舞水袖、身韵组合训练，快速提升技巧，适合有明确目标的学员。'],
+      ['私教一对一·中国舞', '一对一专属指导，老师根据孩子特点量身定制训练计划，重点突破薄弱环节，进步看得见。'],
+      ['拉丁舞大师课', '特邀拉丁舞名师亲授，浓缩大师多年舞台经验，从伦巴、恰恰基础到表演技巧，机会难得，名额有限。'],
+      ['成人爵士舞', '专为成人设计的爵士舞课程，零基础可学，在动感音乐中塑形减压，找回身体的律动感。'],
+      ['成人瑜伽形体', '结合瑜伽与舞蹈形体训练，改善体态、缓解肩颈压力，适合久坐办公人群，每周一次身心放松。'],
+    ];
+    let updated = 0;
+    for (const [kw, desc] of descs) {
+      const r = await this.prisma.course.updateMany({
+        where: { title: { contains: kw }, description: null },
+        data: { description: desc },
+      });
+      updated += r.count;
+    }
+    return { message: `已为 ${updated} 门课程补充介绍`, updated };
+  }
 }

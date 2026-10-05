@@ -14,4 +14,11 @@ export class DemoController {
   seedSpring(@Request() req: { user: { id: string } }, @Body() dto: { student_id: string }) {
     return this.demo.seedSpringTerm(dto.student_id);
   }
+
+  /** 给课程补介绍 */
+  @Roles(UserRole.ADMIN)
+  @Post('admin/demo/seed-descriptions')
+  seedDescriptions() {
+    return this.demo.seedDescriptions();
+  }
 }
