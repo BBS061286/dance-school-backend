@@ -410,6 +410,23 @@ export class ExtraLessonsService {
     return updated;
   }
 
+  /** 更新加课申请的校区 */
+  async updateRequestCampus(requestId: string, campusId: string | null) {
+    const request = await this.prisma.extraLessonRequest.findUnique({
+      where: { id: requestId },
+    });
+    if (!request) throw new NotFoundException('私教单不存在');
+    if (campusId) {
+      const campus = await this.prisma.campus.findUnique({ where: { id: campusId } });
+      if (!campus) throw new NotFoundException('校区不存在');
+    }
+    return this.prisma.extraLessonRequest.update({
+      where: { id: requestId },
+      data: { campusId },
+      include: { campus: { select: { id: true, name: true } } },
+    });
+  }
+
   /** 管理员直接排课：创建时段 → 请求进入 IN_PROGRESS */
   async adminCreateSlots(
     requestId: string,

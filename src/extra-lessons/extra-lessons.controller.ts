@@ -98,6 +98,16 @@ export class ExtraLessonsController {
     return this.lessons.rejectRequest(id, dto.reason);
   }
 
+  /** 更新加课申请的校区（ADMIN） */
+  @Roles(UserRole.ADMIN)
+  @Patch('admin/extra-lesson-requests/:id/campus')
+  updateRequestCampus(
+    @Param('id') id: string,
+    @Body() dto: { campus_id: string | null },
+  ) {
+    return this.lessons.updateRequestCampus(id, dto.campus_id);
+  }
+
   /** 管理员直接排课（ADMIN） */
   @Roles(UserRole.ADMIN)
   @Post('admin/extra-lesson-requests/:id/slots')
