@@ -160,7 +160,7 @@ export class RegisterEventDto {
 
 /** 管理员代报名活动/比赛：{ student_id, ticket_quantity?, group_key? } */
 export class AdminRegisterEventDto {
-  @IsUUID('4')
+  @IsString()
   student_id: string;
 
   @IsOptional()
