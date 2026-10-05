@@ -307,7 +307,16 @@ export class CoursesService {
       where: { id },
       include: {
         campuses: {
-          select: { campus: { select: { id: true, name: true } } },
+          select: {
+            campus: {
+              select: { id: true, name: true, address: true, city: true, zipCode: true },
+            },
+          },
+        },
+        instructors: {
+          select: {
+            instructor: { select: { id: true, user: { select: { name: true } } } },
+          },
         },
         classSessions: {
           where: {
@@ -316,30 +325,44 @@ export class CoursesService {
           },
           orderBy: { startTime: 'asc' },
           include: {
-            campus: { select: { id: true, name: true } },
+            campus: {
+              select: { id: true, name: true, address: true, city: true, zipCode: true },
+            },
             instructor: {
               include: { user: { select: { name: true } } },
             },
+            _count: { select: { occurrences: true } },
           },
         },
       },
     });
     if (!course) throw new NotFoundException('课程不存在');
-    const { campuses, classSessions, ...rest } = course;
-    return {
-      ...rest,
-      campuses: campuses.map((cc) => cc.campus),
-      classSessions: classSessions.map((s) => ({
-        id: s.id,
-        startTime: s.startTime,
-        endTime: s.endTime,
-        capacity: s.capacity,
-        enrolledCount: s.enrolledCount,
+    const { campuses, classSessions, instructors, ...rest } = course;
+    const teacherNames = new Set<string>();
+    for (const ci of instructors) {
+      const n = ci.instructor?.user?.name;
+      if (n) teacherNames.add(n);
+    }
+    let occurrenceCount = 0;
+    const sessions = classSessions.map((s) => {
+      occurrenceCount += s._count.occurrences;
+      if (s.instructor?.user?.name) teacherNames.add(s.instructor.user.name);
+      const { _count, ...sRest } = s;
+      return {
+        ...sRest,
+        occurrenceCount: _count.occurrences,
         campus: s.campus,
         instructor: s.instructor
           ? { id: s.instructor.id, name: s.instructor.user.name }
           : null,
-      })),
+      };
+    });
+    return {
+      ...rest,
+      campuses: campuses.map((cc) => cc.campus),
+      teachers: [...teacherNames],
+      occurrenceCount,
+      classSessions: sessions,
     };
   }
 
