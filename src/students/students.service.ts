@@ -282,6 +282,8 @@ export class StudentsService {
       include: {
         slots: { orderBy: { date: 'asc' } },
         instructor: { include: { user: { select: { name: true } } } },
+        campus: { select: { name: true } },
+        sourceCourse: { select: { title: true } },
       },
       orderBy: { createdAt: 'desc' },
       take: 10,
@@ -306,7 +308,23 @@ export class StudentsService {
         type: r.type,
         status: r.status,
         teacher: r.instructor?.user?.name ?? '待分配',
-        slots: r.slots.map((sl) => ({ date: sl.date, time: sl.time, status: sl.status })),
+        content: r.content ?? null,
+        location: r.location ?? null,
+        campus: r.campus?.name ?? null,
+        sourceCourse: r.sourceCourse?.title ?? null,
+        createdAt: r.createdAt,
+        slots: r.slots.map((sl) => ({
+          id: sl.id,
+          date: sl.date,
+          time: sl.time,
+          status: sl.status,
+          altDate: sl.altDate ?? null,
+          altTime: sl.altTime ?? null,
+          feeCents: sl.feeCents ?? null,
+          feeStatus: sl.feeStatus,
+          confirmedAt: sl.confirmedAt ?? null,
+          reviewContent: sl.reviewContent ?? null,
+        })),
       })),
     };
   }
