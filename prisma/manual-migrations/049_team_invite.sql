@@ -2,13 +2,8 @@
 -- 管理员选定学员发起组队邀请，家长接受后自动创建带 groupKey 的报名
 -- 幂等：IF NOT EXISTS
 
--- 通知类型加 TEAM_INVITE（组队邀请）
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'TEAM_INVITE' AND enumtypid = 'NotificationType'::regtype) THEN
-    ALTER TYPE "NotificationType" ADD VALUE 'TEAM_INVITE';
-  END IF;
-END $$;
+-- 通知类型加 TEAM_INVITE（组队邀请）；已存在则跳过（migration.service 会忽略 duplicate 错误）
+ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'TEAM_INVITE';
 
 CREATE TABLE IF NOT EXISTS "EventTeamInvite" (
   "id" TEXT PRIMARY KEY,
