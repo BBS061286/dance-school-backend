@@ -440,7 +440,7 @@ export class EnrollmentsService {
             startTime: true,
             endTime: true,
             campus: { select: { id: true, name: true } },
-            course: { select: { title: true } },
+            course: { select: { title: true, priceCents: true } },
           },
         },
       },
