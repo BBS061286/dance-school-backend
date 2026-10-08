@@ -14,7 +14,10 @@ import {
   PaymentStatus,
 } from '@prisma/client';
 import { EnrollmentsService } from '../enrollments/enrollments.service';
-import { PaymentsProvider } from '../integrations/payments.provider';
+import {
+  PaymentsProvider,
+  StubPaymentsProvider,
+} from '../integrations/payments.provider';
 import { PrismaService } from '../prisma/prisma.service';
 import { RequestUser, TxClient } from '../common/types';
 import { AdminOrdersQuery, SetDiscountDto } from './dto/order.dto';
@@ -290,6 +293,18 @@ export class BillingService {
     }
 
     const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
+    // 演示模式（stub）：不返回打不开的 stub-checkout.local 假链接，
+    // 而是进应用内演示收银台，点"模拟支付成功"即可走完付款全流程。
+    // 接入真实 Stripe 后此分支自动失效（demoCompletePayment 会拒绝）。
+    if (this.paymentsProvider instanceof StubPaymentsProvider) {
+      const rolePrefix =
+        requester.role === 'ADULT_STUDENT' ? '/adult' : '/parent';
+      return {
+        url: `${frontendUrl}${rolePrefix}/demo-checkout/${order.id}`,
+        demo: true,
+        stripe_payment_intent_id: piId,
+      };
+    }
     const { url } = await this.paymentsProvider.createCheckoutSession({
       orderId: order.id,
       amountCents: order.amountCents,
@@ -297,7 +312,54 @@ export class BillingService {
       successUrl: `${frontendUrl}/orders/${order.id}/success`,
       cancelUrl: `${frontendUrl}/orders/${order.id}`,
     });
-    return { url, stripe_payment_intent_id: piId };
+    return { url, demo: false, stripe_payment_intent_id: piId };
+  }
+
+  /**
+   * 演示收银台：模拟支付成功（仅 stub 演示模式可用）。
+   * 家长/成人学员只能操作自己的订单；管理员可操作任意订单。
+   * 写入一笔 SUCCEEDED 的 STRIPE 付款后走 deriveOrder 派生：
+   * 订单变 PAID → 报名自动确认 → 触发报名成功通知，与真实支付路径一致。
+   */
+  async demoCompletePayment(requester: RequestUser, orderId: string) {
+    if (!(this.paymentsProvider instanceof StubPaymentsProvider)) {
+      throw new BadRequestException('当前为真实支付模式，演示完成接口不可用');
+    }
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { payments: true },
+    });
+    if (!order) throw new NotFoundException(`订单不存在：${orderId}`);
+    if (order.parentId !== requester.id && requester.role !== 'ADMIN') {
+      throw new ForbiddenException('无权访问该订单');
+    }
+    if (['FAILED', 'CANCELLED', 'REFUNDED', 'PAID'].includes(order.status)) {
+      throw new ConflictException('订单当前状态不允许演示支付');
+    }
+    const paidCents = order.payments
+      .filter((p) => p.status === 'SUCCEEDED')
+      .reduce((sum, p) => sum + p.amountCents, 0);
+    const remaining = order.amountCents - paidCents;
+    if (remaining <= 0) {
+      throw new ConflictException('订单已付清，无需再支付');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.payment.create({
+        data: {
+          orderId,
+          amountCents: remaining,
+          method: 'STRIPE',
+          status: 'SUCCEEDED',
+          externalRef: `demo_stub_${orderId}`,
+        },
+      });
+      await this.deriveOrder(tx, orderId);
+      return tx.order.findUnique({
+        where: { id: orderId },
+        include: { payments: true, refunds: true },
+      });
+    });
   }
 
   // ---------------------------------------------------------------- 付款

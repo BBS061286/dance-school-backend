@@ -41,6 +41,15 @@ export class BillingController {
     return this.billingService.createCheckoutSession(req.user, id);
   }
 
+  /** 演示收银台：模拟支付成功（仅 stub 演示模式可用，归属校验在 service） */
+  @Post('orders/:id/demo-complete-payment')
+  demoCompletePayment(
+    @Request() req: { user: RequestUser },
+    @Param('id') id: string,
+  ) {
+    return this.billingService.demoCompletePayment(req.user, id);
+  }
+
   /** 学员自助提交付款（线下渠道，待管理员确认） */
   @Post('orders/:id/payments')
   recordSelfPayment(
