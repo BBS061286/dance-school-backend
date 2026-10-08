@@ -18,7 +18,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
- * 私信服务（§6.22/6.23）：一个用户（家长/成人学员/教师）与管理端之间只有一条 thread。
+ * 私信服务（§6.22/6.23）：一用户可有多条 thread——与管理员一条、与每位老师各一条。
+ * peerType=ADMIN（peerId 为空）| INSTRUCTOR（peerId 为老师的 userId）。
  * 管理端回复后向发起方发 MESSAGE_REPLY 通知（sourceType=MESSAGE）。
  */
 @Injectable()
@@ -42,17 +43,81 @@ export class MessagingService {
     }
   }
 
-  /** POST /me/messages：追加到"我与管理端"的 thread，不存在则自动创建 */
-  async postMessage(user: RequestUser, body: string) {
-    const participantRole = this.participantRoleFor(user.role);
-    let thread = await this.prisma.messageThread.findUnique({
-      where: { participantId: user.id },
+  /** 找或建会话（participantId + peerType + peerId 唯一） */
+  private async findOrCreateThread(
+    participantId: string,
+    participantRole: ParticipantRole,
+    peerType: string,
+    peerId: string | null,
+  ) {
+    let thread = await this.prisma.messageThread.findFirst({
+      where: {
+        participantId,
+        peerType,
+        peerId,
+      },
     });
     if (!thread) {
-      thread = await this.prisma.messageThread.create({
-        data: { participantId: user.id, participantRole },
-      });
+      try {
+        thread = await this.prisma.messageThread.create({
+          data: { participantId, participantRole, peerType, peerId },
+        });
+      } catch {
+        // 并发建会话时唯一索引冲突，重查一次
+        thread = await this.prisma.messageThread.findFirst({
+          where: { participantId, peerType, peerId },
+        });
+        if (!thread) throw new BadRequestException('创建私信会话失败，请重试');
+      }
     }
+    return thread;
+  }
+
+  /**
+   * POST /me/messages：发私信。
+   * peerType=ADMIN（默认，给管理员）| INSTRUCTOR（给老师，需传 peerId=老师 userId）
+   */
+  async postMessage(
+    user: RequestUser,
+    body: string,
+    peerType = 'ADMIN',
+    peerId: string | null = null,
+  ) {
+    const participantRole = this.participantRoleFor(user.role);
+    if (peerType !== 'ADMIN' && peerType !== 'INSTRUCTOR') {
+      throw new BadRequestException('peerType 只能是 ADMIN 或 INSTRUCTOR');
+    }
+    let notifyUserIds: string[] = [];
+    let notifyTitle = '收到一条新私信';
+
+    if (peerType === 'INSTRUCTOR') {
+      if (!peerId) throw new BadRequestException('给老师发私信需要指定老师');
+      // 只能给自己孩子的任课老师发
+      const teachers = await this.messageableTeachers(user.id);
+      const target = teachers.find((t) => t.userId === peerId);
+      if (!target) throw new ForbiddenException('只能给自己孩子的任课老师发私信');
+      notifyUserIds = [peerId];
+      const sender = await this.prisma.user.findUnique({
+        where: { id: user.id },
+        select: { name: true },
+      });
+      notifyTitle = `${sender?.name ?? '家长'}给你发了一条私信`;
+    } else {
+      peerId = null;
+      // 通知所有在职管理员（失败不影响发送）
+      const admins = await this.prisma.user.findMany({
+        where: { role: UserRole.ADMIN, isActive: true, id: { not: user.id } },
+        select: { id: true },
+      });
+      notifyUserIds = admins.map((a) => a.id);
+    }
+
+    const thread = await this.findOrCreateThread(
+      user.id,
+      participantRole,
+      peerType,
+      peerId,
+    );
     const message = await this.prisma.message.create({
       data: {
         threadId: thread.id,
@@ -65,37 +130,260 @@ export class MessagingService {
       where: { id: thread.id },
       data: { lastMessageAt: message.createdAt },
     });
-    // 通知所有管理员有新私信（失败不影响发送）
     try {
-      const admins = await this.prisma.user.findMany({
-        where: { role: UserRole.ADMIN, isActive: true, id: { not: user.id } },
-        select: { id: true },
-      });
       const preview = body.length > 80 ? `${body.slice(0, 80)}…` : body;
-      for (const a of admins) {
+      for (const uid of notifyUserIds) {
         await this.notifications.notify({
-          userId: a.id,
+          userId: uid,
           type: NotificationType.MESSAGE_RECEIVED,
-          title: '收到一条新私信',
+          title: notifyTitle,
           body: preview,
           sourceType: NotificationSourceType.MESSAGE,
           sourceId: message.id,
         });
       }
-    } catch (e) {
+    } catch {
       // 通知失败不阻塞
     }
     return { thread, message };
   }
 
-  /** GET /me/messages：查看我与管理端的私信记录 */
-  async myMessages(userId: string) {
-    const thread = await this.prisma.messageThread.findUnique({
-      where: { participantId: userId },
-      include: { messages: { orderBy: { createdAt: 'asc' } } },
+  /** 我可联系的老师：孩子已确认报名课程的任课老师（去重） */
+  async messageableTeachers(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, role: true },
     });
+    if (!user) throw new NotFoundException('用户不存在');
+
+    // 找到该用户关联的学员 id 列表
+    let studentIds: string[] = [];
+    if (user.role === UserRole.PARENT) {
+      const links = await this.prisma.parentStudentLink.findMany({
+        where: { parentId: userId },
+        select: { studentId: true },
+      });
+      studentIds = links.map((l) => l.studentId);
+    } else if (user.role === UserRole.ADULT_STUDENT) {
+      const links = await this.prisma.parentStudentLink.findMany({
+        where: { parentId: userId, relationship: Relationship.SELF },
+        select: { studentId: true },
+      });
+      studentIds = links.map((l) => l.studentId);
+    } else {
+      return [];
+    }
+    if (studentIds.length === 0) return [];
+
+    const enrollments = await this.prisma.enrollment.findMany({
+      where: { studentId: { in: studentIds }, status: 'CONFIRMED' },
+      include: {
+        classSession: {
+          include: {
+            course: {
+              include: {
+                instructors: {
+                  include: {
+                    instructor: {
+                      select: {
+                        userId: true,
+                        user: { select: { id: true, name: true } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const map = new Map<string, { userId: string; name: string }>();
+    for (const e of enrollments) {
+      for (const ci of e.classSession?.course?.instructors ?? []) {
+        const u = ci.instructor?.user;
+        if (u && !map.has(u.id)) {
+          map.set(u.id, { userId: u.id, name: u.name ?? '老师' });
+        }
+      }
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
+  }
+
+  /** GET /me/message-threads：我的会话列表（带对方信息、最后一条、未读数） */
+  async myThreads(userId: string) {
+    const threads = await this.prisma.messageThread.findMany({
+      where: { participantId: userId },
+      include: { messages: { orderBy: { createdAt: 'desc' }, take: 1 } },
+      orderBy: { lastMessageAt: 'desc' },
+    });
+    // 老师会话补老师姓名
+    const teacherIds = threads
+      .filter((t) => t.peerType === 'INSTRUCTOR' && t.peerId)
+      .map((t) => t.peerId as string);
+    const teacherUsers =
+      teacherIds.length > 0
+        ? await this.prisma.user.findMany({
+            where: { id: { in: teacherIds } },
+            select: { id: true, name: true },
+          })
+        : [];
+    const teacherName = new Map(teacherUsers.map((u) => [u.id, u.name ?? '老师']));
+
+    const threadIds = threads.map((t) => t.id);
+    const unreadRows =
+      threadIds.length > 0
+        ? await this.prisma.message.groupBy({
+            by: ['threadId'],
+            where: { threadId: { in: threadIds }, senderId: { not: userId }, readAt: null },
+            _count: { _all: true },
+          })
+        : [];
+    const unreadMap = new Map(unreadRows.map((r) => [r.threadId, r._count._all]));
+
+    return threads.map((t) => ({
+      id: t.id,
+      peerType: t.peerType,
+      peerId: t.peerId,
+      peerName: t.peerType === 'INSTRUCTOR' ? (teacherName.get(t.peerId ?? '') ?? '老师') : '学校',
+      lastMessageAt: t.lastMessageAt,
+      lastMessage: t.messages[0]?.body ?? '',
+      lastMessageTime: t.messages[0]?.createdAt ?? t.lastMessageAt,
+      unreadCount: unreadMap.get(t.id) ?? 0,
+    }));
+  }
+
+  /** GET /me/messages?threadId=：查看指定会话的消息（不传则看与管理员的） */
+  async myMessages(userId: string, threadId?: string) {
+    let thread;
+    if (threadId) {
+      thread = await this.prisma.messageThread.findFirst({
+        where: { id: threadId, participantId: userId },
+        include: { messages: { orderBy: { createdAt: 'asc' } } },
+      });
+      if (!thread) throw new NotFoundException('私信会话不存在');
+    } else {
+      thread = await this.prisma.messageThread.findFirst({
+        where: { participantId: userId, peerType: 'ADMIN' },
+        include: { messages: { orderBy: { createdAt: 'asc' } } },
+      });
+    }
     return { thread, messages: thread?.messages ?? [] };
   }
+
+  /** POST /me/message-threads/:id/read：标已读（对方发的） */
+  async markThreadRead(userId: string, threadId: string) {
+    const thread = await this.prisma.messageThread.findFirst({
+      where: { id: threadId, participantId: userId },
+    });
+    if (!thread) throw new NotFoundException('私信会话不存在');
+    const result = await this.prisma.message.updateMany({
+      where: { threadId, senderId: { not: userId }, readAt: null },
+      data: { readAt: new Date() },
+    });
+    return { marked: result.count };
+  }
+
+  // ------------------- 教师端 -------------------
+
+  /** GET /me/instructor/message-threads：老师收到的私信会话（家长/学员发给我的） */
+  async instructorThreads(instructorUserId: string) {
+    const threads = await this.prisma.messageThread.findMany({
+      where: { peerType: 'INSTRUCTOR', peerId: instructorUserId },
+      include: {
+        participant: { select: { id: true, name: true, role: true } },
+        messages: { orderBy: { createdAt: 'desc' }, take: 1 },
+      },
+      orderBy: { lastMessageAt: 'desc' },
+    });
+    const threadIds = threads.map((t) => t.id);
+    const unreadRows =
+      threadIds.length > 0
+        ? await this.prisma.message.groupBy({
+            by: ['threadId'],
+            where: {
+              threadId: { in: threadIds },
+              senderId: { not: instructorUserId },
+              readAt: null,
+            },
+            _count: { _all: true },
+          })
+        : [];
+    const unreadMap = new Map(unreadRows.map((r) => [r.threadId, r._count._all]));
+    return threads.map((t) => ({
+      id: t.id,
+      participant: t.participant,
+      lastMessageAt: t.lastMessageAt,
+      lastMessage: t.messages[0]?.body ?? '',
+      lastMessageTime: t.messages[0]?.createdAt ?? t.lastMessageAt,
+      unreadCount: unreadMap.get(t.id) ?? 0,
+    }));
+  }
+
+  /** GET /me/instructor/message-threads/:id：老师看某个会话 */
+  async instructorThread(instructorUserId: string, threadId: string) {
+    const thread = await this.prisma.messageThread.findFirst({
+      where: { id: threadId, peerType: 'INSTRUCTOR', peerId: instructorUserId },
+      include: {
+        participant: { select: { id: true, name: true, role: true } },
+        messages: { orderBy: { createdAt: 'asc' } },
+      },
+    });
+    if (!thread) throw new NotFoundException('私信会话不存在');
+    return thread;
+  }
+
+  /** POST /me/instructor/message-threads/:id/reply：老师回复家长/学员 */
+  async instructorReply(instructor: RequestUser, threadId: string, body: string) {
+    const thread = await this.prisma.messageThread.findFirst({
+      where: { id: threadId, peerType: 'INSTRUCTOR', peerId: instructor.id },
+    });
+    if (!thread) throw new NotFoundException('私信会话不存在');
+    const message = await this.prisma.message.create({
+      data: {
+        threadId,
+        senderId: instructor.id,
+        senderRole: SenderRole.INSTRUCTOR,
+        body,
+      },
+    });
+    await this.prisma.messageThread.update({
+      where: { id: threadId },
+      data: { lastMessageAt: message.createdAt },
+    });
+    try {
+      const sender = await this.prisma.user.findUnique({
+        where: { id: instructor.id },
+        select: { name: true },
+      });
+      await this.notifications.notify({
+        userId: thread.participantId,
+        type: NotificationType.MESSAGE_REPLY,
+        title: `${sender?.name ?? '老师'}回复了你的私信`,
+        body: body.length > 120 ? `${body.slice(0, 120)}…` : body,
+        sourceType: NotificationSourceType.MESSAGE,
+        sourceId: message.id,
+      });
+    } catch {
+      // 通知失败不影响发送
+    }
+    return message;
+  }
+
+  /** POST /me/instructor/message-threads/:id/read：老师标已读 */
+  async instructorMarkRead(instructorUserId: string, threadId: string) {
+    const thread = await this.prisma.messageThread.findFirst({
+      where: { id: threadId, peerType: 'INSTRUCTOR', peerId: instructorUserId },
+    });
+    if (!thread) throw new NotFoundException('私信会话不存在');
+    const result = await this.prisma.message.updateMany({
+      where: { threadId, senderId: { not: instructorUserId }, readAt: null },
+      data: { readAt: new Date() },
+    });
+    return { marked: result.count };
+  }
+
+  // ------------------- 管理端（保持兼容，多会话） -------------------
 
   /** GET /admin/messages/threads?role=&search=：管理端收件箱，可按身份筛选、按姓名/电话搜索，带未读数 */
   async listThreads(role?: ParticipantRole, search?: string) {
@@ -121,7 +409,20 @@ export class MessagingService {
       },
       orderBy: { lastMessageAt: 'desc' },
     });
-    // 未读数：senderRole != ADMIN 且 readAt 为 null（一次 groupBy 查全量）
+    // 老师会话补老师姓名
+    const teacherIds = threads
+      .filter((t) => t.peerType === 'INSTRUCTOR' && t.peerId)
+      .map((t) => t.peerId as string);
+    const teacherUsers =
+      teacherIds.length > 0
+        ? await this.prisma.user.findMany({
+            where: { id: { in: teacherIds } },
+            select: { id: true, name: true },
+          })
+        : [];
+    const teacherName = new Map(teacherUsers.map((u) => [u.id, u.name ?? '老师']));
+
+    // 未读数：非 ADMIN 发的且 readAt 为 null（一次 groupBy 查全量）
     const threadIds = threads.map((t) => t.id);
     const unreadRows =
       threadIds.length > 0
@@ -136,7 +437,12 @@ export class MessagingService {
           })
         : [];
     const unreadMap = new Map(unreadRows.map((r) => [r.threadId, r._count._all]));
-    return threads.map((t) => ({ ...t, unreadCount: unreadMap.get(t.id) ?? 0 }));
+    return threads.map((t) => ({
+      ...t,
+      peerName:
+        t.peerType === 'INSTRUCTOR' ? (teacherName.get(t.peerId ?? '') ?? '老师') : '学校',
+      unreadCount: unreadMap.get(t.id) ?? 0,
+    }));
   }
 
   /** GET /admin/messages/threads/:id */
@@ -226,14 +532,12 @@ export class MessagingService {
       participantRole = this.participantRoleFor(target.role);
     }
 
-    let thread = await this.prisma.messageThread.findUnique({
-      where: { participantId: targetUserId! },
-    });
-    if (!thread) {
-      thread = await this.prisma.messageThread.create({
-        data: { participantId: targetUserId!, participantRole },
-      });
-    }
+    const thread = await this.findOrCreateThread(
+      targetUserId!,
+      participantRole,
+      'ADMIN',
+      null,
+    );
 
     const finalBody = dto.contextStudentName
       ? `（关于学员：${dto.contextStudentName}）\n${dto.body}`

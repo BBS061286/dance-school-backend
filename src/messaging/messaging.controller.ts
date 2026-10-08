@@ -9,7 +9,7 @@ import {
   Request,
 } from '@nestjs/common';
 import { ParticipantRole, UserRole } from '@prisma/client';
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RequestUser } from '../common/types';
 import {
@@ -30,24 +30,97 @@ class ListThreadsQueryDto {
   search?: string;
 }
 
+class MyMessagesQueryDto {
+  @IsOptional()
+  @IsUUID('4', { message: 'threadId 必须是合法的 UUID' })
+  threadId?: string;
+}
+
 /** 私信路由（§6.22/6.23）。全局前缀 /api/v1 在 main.ts 设置。 */
 @Controller()
 export class MessagingController {
   constructor(private readonly messaging: MessagingService) {}
 
-  /** 发私信：POST /me/messages（thread 不存在自动创建） */
+  /** 发私信：POST /me/messages（thread 不存在自动创建，可指定 peerType/peerId 发给老师） */
   @Post('me/messages')
   postMessage(
     @Request() req: { user: RequestUser },
     @Body() dto: SendMessageDto,
   ) {
-    return this.messaging.postMessage(req.user, dto.body);
+    return this.messaging.postMessage(
+      req.user,
+      dto.body,
+      dto.peerType ?? 'ADMIN',
+      dto.peerId ?? null,
+    );
   }
 
-  /** 查看私信：GET /me/messages */
+  /** 查看私信：GET /me/messages?threadId=（不传则看与管理员的） */
   @Get('me/messages')
-  myMessages(@Request() req: { user: RequestUser }) {
-    return this.messaging.myMessages(req.user.id);
+  myMessages(
+    @Request() req: { user: RequestUser },
+    @Query() query: MyMessagesQueryDto,
+  ) {
+    return this.messaging.myMessages(req.user.id, query.threadId);
+  }
+
+  /** 我的会话列表：GET /me/message-threads */
+  @Get('me/message-threads')
+  myThreads(@Request() req: { user: RequestUser }) {
+    return this.messaging.myThreads(req.user.id);
+  }
+
+  /** 标已读：POST /me/message-threads/:id/read */
+  @Post('me/message-threads/:id/read')
+  markThreadRead(
+    @Request() req: { user: RequestUser },
+    @Param('id') id: string,
+  ) {
+    return this.messaging.markThreadRead(req.user.id, id);
+  }
+
+  /** 我可联系的老师：GET /me/messageable-teachers */
+  @Get('me/messageable-teachers')
+  messageableTeachers(@Request() req: { user: RequestUser }) {
+    return this.messaging.messageableTeachers(req.user.id);
+  }
+
+  /** 教师端收件箱：GET /me/instructor/message-threads（INSTRUCTOR） */
+  @Roles(UserRole.INSTRUCTOR)
+  @Get('me/instructor/message-threads')
+  instructorThreads(@Request() req: { user: RequestUser }) {
+    return this.messaging.instructorThreads(req.user.id);
+  }
+
+  /** 教师端看会话：GET /me/instructor/message-threads/:id（INSTRUCTOR） */
+  @Roles(UserRole.INSTRUCTOR)
+  @Get('me/instructor/message-threads/:id')
+  instructorThread(
+    @Request() req: { user: RequestUser },
+    @Param('id') id: string,
+  ) {
+    return this.messaging.instructorThread(req.user.id, id);
+  }
+
+  /** 教师端回复：POST /me/instructor/message-threads/:id/reply（INSTRUCTOR） */
+  @Roles(UserRole.INSTRUCTOR)
+  @Post('me/instructor/message-threads/:id/reply')
+  instructorReply(
+    @Request() req: { user: RequestUser },
+    @Param('id') id: string,
+    @Body() dto: ReplyMessageDto,
+  ) {
+    return this.messaging.instructorReply(req.user, id, dto.body);
+  }
+
+  /** 教师端标已读：POST /me/instructor/message-threads/:id/read（INSTRUCTOR） */
+  @Roles(UserRole.INSTRUCTOR)
+  @Post('me/instructor/message-threads/:id/read')
+  instructorMarkRead(
+    @Request() req: { user: RequestUser },
+    @Param('id') id: string,
+  ) {
+    return this.messaging.instructorMarkRead(req.user.id, id);
   }
 
   /** 管理端收件箱：GET /admin/messages/threads?role=&search=（ADMIN） */

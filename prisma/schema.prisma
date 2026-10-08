@@ -980,12 +980,16 @@ model MessageThread {
   participantId   String
   participant     User            @relation("ThreadParticipant", fields: [participantId], references: [id])
   participantRole ParticipantRole
+  // 私信对象：ADMIN=管理员（peerId 为空），INSTRUCTOR=指定老师（peerId 为老师的 userId）
+  peerType        String          @default("ADMIN")
+  peerId          String?
   lastMessageAt   DateTime        @default(now())
   createdAt       DateTime        @default(now())
 
   messages Message[]
 
-  @@unique([participantId]) // 一用户与管理端仅一条 thread
+  // 唯一性由 048 迁移的表达式索引保证：(participantId, peerType, COALESCE(peerId,''))
+  @@index([participantId])
 }
 
 model Message {

@@ -1,10 +1,19 @@
 import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
-/** 发送私信请求体（§6.22/6.23）：{ body } */
+/** 发送私信请求体（§6.22/6.23）：{ body, peerType?, peerId? }
+ * peerType=ADMIN（默认，给管理员）| INSTRUCTOR（给老师，需 peerId=老师 userId） */
 export class SendMessageDto {
   @IsString({ message: 'body 必须是字符串' })
   @IsNotEmpty({ message: 'body 不能为空' })
   body: string;
+
+  @IsOptional()
+  @IsString({ message: 'peerType 必须是字符串' })
+  peerType?: string;
+
+  @IsOptional()
+  @IsString({ message: 'peerId 必须是字符串' })
+  peerId?: string;
 }
 
 /** 管理端回复私信请求体：{ body } */
