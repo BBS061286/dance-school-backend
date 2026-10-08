@@ -13,7 +13,8 @@ import { UserRole } from '@prisma/client';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RequestUser } from '../common/types';
-import { AddTicketsDto, AdminRegisterEventDto, CreateEventDto, CreateNoticeDto, IssueFeeDto, MergeGroupDto, PayEventRegistrationDto, RegisterEventDto } from './dto/events.dto';
+import { AddTicketsDto, AdminRegisterEventDto, CreateEventDto, CreateNoticeDto, IssueFeeDto, MergeGroupDto, PayEventRegistrationDto, RegisterEventDto, CreateTeamInvitesDto,
+} from './dto/events.dto';
 import { EventsService } from './events.service';
 
 /**
@@ -118,6 +119,48 @@ export class EventsController {
   @Get('events/:id/groups')
   listGroups(@Param('id') id: string) {
     return this.events.listGroups(id);
+  }
+
+  /** 管理员发起组队邀请（ADMIN）：{ group_name, student_ids[] } */
+  @Roles(UserRole.ADMIN)
+  @Post('admin/events/:id/team-invites')
+  createTeamInvites(
+    @Request() req: { user: RequestUser },
+    @Param('id') id: string,
+    @Body() dto: CreateTeamInvitesDto,
+  ) {
+    return this.events.createTeamInvites(req.user.id, id, dto);
+  }
+
+  /** 管理员查看组队邀请（ADMIN） */
+  @Roles(UserRole.ADMIN)
+  @Get('admin/events/:id/team-invites')
+  listTeamInvites(@Param('id') id: string) {
+    return this.events.listTeamInvites(id);
+  }
+
+  /** 家长查看我的组队邀请 */
+  @Get('me/team-invites')
+  myTeamInvites(@Request() req: { user: RequestUser }) {
+    return this.events.myTeamInvites(req.user.id);
+  }
+
+  /** 家长接受组队邀请 */
+  @Post('me/team-invites/:id/accept')
+  acceptTeamInvite(
+    @Request() req: { user: RequestUser },
+    @Param('id') id: string,
+  ) {
+    return this.events.acceptTeamInvite(req.user.id, id);
+  }
+
+  /** 家长拒绝组队邀请 */
+  @Post('me/team-invites/:id/decline')
+  declineTeamInvite(
+    @Request() req: { user: RequestUser },
+    @Param('id') id: string,
+  ) {
+    return this.events.declineTeamInvite(req.user.id, id);
   }
 
   /** 取消活动报名 */

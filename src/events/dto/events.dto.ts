@@ -5,6 +5,7 @@ import {
   IsEnum,
   IsIn,
   IsInt,
+  IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
@@ -193,6 +194,17 @@ export class MergeGroupDto {
   @IsOptional()
   @IsString()
   group_name?: string;
+}
+
+/** 管理员发起组队邀请：{ group_name, student_ids[] } */
+export class CreateTeamInvitesDto {
+  @IsString({ message: 'group_name 必须是字符串' })
+  @IsNotEmpty({ message: 'group_name 不能为空' })
+  group_name: string;
+
+  @IsArray()
+  @IsUUID('4', { each: true, message: 'student_ids 必须是合法的 UUID 数组' })
+  student_ids: string[];
 }
 
 /** 管理员发放参赛/参与费用 */

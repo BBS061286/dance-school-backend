@@ -1134,6 +1134,202 @@ export class EventsService {
     });
     return '\uFEFF' + [header, ...lines].join('\n');
   }
+
+  // ---------------------------------------------------------------- 组队邀请（049）
+
+  /**
+   * 管理员发起组队邀请（ADMIN）：POST /admin/events/:id/team-invites。
+   * Body: { group_name, student_ids[] }。同一批邀请共享一个 groupKey。
+   * 给每位学员的首选家长发 TEAM_INVITE 通知。
+   */
+  async createTeamInvites(adminId: string, eventId: string, dto: { group_name: string; student_ids: string[] }) {
+    const event = await this.prisma.event.findUnique({ where: { id: eventId } });
+    if (!event) throw new NotFoundException(`活动不存在：${eventId}`);
+    const groupName = dto.group_name?.trim();
+    if (!groupName) throw new BadRequestException('请填写组名');
+    const studentIds = [...new Set(dto.student_ids ?? [])].filter(Boolean);
+    if (studentIds.length === 0) throw new BadRequestException('请选择要邀请的学员');
+    if (event.groupSize != null && studentIds.length > event.groupSize) {
+      throw new BadRequestException(`该组人数上限为 ${event.groupSize} 人`);
+    }
+
+    const students = await this.prisma.student.findMany({
+      where: { id: { in: studentIds } },
+      include: {
+        parentLinks: {
+          include: { parent: { select: { id: true, name: true } } },
+          orderBy: [{ isPrimaryContact: 'desc' }],
+        },
+      },
+    });
+    if (students.length !== studentIds.length) {
+      throw new NotFoundException('部分学员不存在');
+    }
+
+    // 已报名的跳过（幂等：已有有效报名不再邀请）
+    const existingRegs = await this.prisma.eventRegistration.findMany({
+      where: {
+        eventId,
+        studentId: { in: studentIds },
+        status: { in: ['REGISTERED', 'WAITLISTED'] },
+      },
+      select: { studentId: true },
+    });
+    const registeredSet = new Set(existingRegs.map((r) => r.studentId));
+
+    const groupKey = randomUUID();
+    const created: string[] = [];
+    const skipped: string[] = [];
+    for (const st of students) {
+      if (registeredSet.has(st.id)) {
+        skipped.push(st.name);
+        continue;
+      }
+      const invite = await this.prisma.eventTeamInvite.create({
+        data: {
+          eventId,
+          groupKey,
+          groupName,
+          studentId: st.id,
+          invitedById: adminId,
+          status: 'PENDING',
+        },
+      });
+      created.push(invite.id);
+      const parent = st.parentLinks[0]?.parent;
+      if (parent) {
+        try {
+          await this.notifications.notify({
+            userId: parent.id,
+            type: NotificationType.TEAM_INVITE,
+            title: `组队邀请：${event.title}`,
+            body: `管理员邀请 ${st.name} 加入「${groupName}」参加${event.title}，请前往活动页接受邀请。`,
+            sourceType: NotificationSourceType.EVENT,
+            sourceId: eventId,
+          });
+        } catch { /* 忽略 */ }
+      }
+    }
+    return { groupKey, groupName, invited: created.length, skipped };
+  }
+
+  /** 管理员查看某活动的组队邀请（ADMIN）：GET /admin/events/:id/team-invites */
+  async listTeamInvites(eventId: string) {
+    const invites = await this.prisma.eventTeamInvite.findMany({
+      where: { eventId },
+      include: {
+        student: { select: { id: true, name: true } },
+        invitedBy: { select: { id: true, name: true } },
+      },
+      orderBy: [{ groupKey: 'asc' }, { createdAt: 'asc' }],
+    });
+    const map = new Map<string, { groupKey: string; groupName: string; invites: typeof invites }>();
+    for (const inv of invites) {
+      const g = map.get(inv.groupKey) ?? { groupKey: inv.groupKey, groupName: inv.groupName, invites: [] };
+      g.invites.push(inv);
+      map.set(inv.groupKey, g);
+    }
+    return [...map.values()];
+  }
+
+  /** 家长查看我的组队邀请：GET /me/team-invites（仅 PENDING） */
+  async myTeamInvites(userId: string) {
+    const links = await this.prisma.parentStudentLink.findMany({
+      where: { parentId: userId },
+      select: { studentId: true },
+    });
+    const studentIds = links.map((l) => l.studentId);
+    if (studentIds.length === 0) return [];
+    return this.prisma.eventTeamInvite.findMany({
+      where: { studentId: { in: studentIds }, status: 'PENDING' },
+      include: {
+        event: {
+          select: {
+            id: true, title: true, category: true,
+            startTime: true, endTime: true, location: true,
+            participationFeeCents: true, feeMode: true, groupSize: true,
+            campus: { select: { name: true } },
+          },
+        },
+        student: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * 家长接受组队邀请：POST /me/team-invites/:id/accept。
+   * 创建带 groupKey 的报名（SPLIT 均摊自动重算）。
+   */
+  async acceptTeamInvite(userId: string, inviteId: string) {
+    const invite = await this.prisma.eventTeamInvite.findUnique({
+      where: { id: inviteId },
+      include: { event: true },
+    });
+    if (!invite) throw new NotFoundException('邀请不存在');
+    if (invite.status !== 'PENDING') throw new BadRequestException('该邀请已处理');
+    const link = await this.prisma.parentStudentLink.findFirst({
+      where: { parentId: userId, studentId: invite.studentId },
+    });
+    if (!link) throw new ForbiddenException('无权处理该邀请');
+
+    const event = invite.event;
+    const dup = await this.prisma.eventRegistration.findFirst({
+      where: {
+        eventId: event.id,
+        parentId: userId,
+        studentId: invite.studentId,
+        status: { in: ['REGISTERED', 'WAITLISTED'] },
+      },
+    });
+
+    let registration = dup;
+    if (!dup) {
+      registration = await this.prisma.eventRegistration.create({
+        data: {
+          eventId: event.id,
+          studentId: invite.studentId,
+          parentId: userId,
+          status: 'REGISTERED',
+          groupKey: invite.groupKey,
+          groupName: invite.groupName,
+        },
+      });
+      if (event.feeMode === 'SPLIT' && event.participationFeeCents != null && event.participationFeeCents > 0) {
+        await this.recalcSplitGroup(event.id, invite.groupKey, event.participationFeeCents);
+      } else if (event.participationFeeCents != null && event.participationFeeCents > 0) {
+        await this.prisma.eventRegistration.update({
+          where: { id: registration.id },
+          data: { participationFeeCents: event.participationFeeCents },
+        });
+      }
+    }
+
+    await this.prisma.eventTeamInvite.update({
+      where: { id: invite.id },
+      data: { status: 'ACCEPTED', respondedAt: new Date() },
+    });
+    return { inviteId: invite.id, registrationId: registration!.id };
+  }
+
+  /** 家长拒绝组队邀请：POST /me/team-invites/:id/decline */
+  async declineTeamInvite(userId: string, inviteId: string) {
+    const invite = await this.prisma.eventTeamInvite.findUnique({
+      where: { id: inviteId },
+    });
+    if (!invite) throw new NotFoundException('邀请不存在');
+    if (invite.status !== 'PENDING') throw new BadRequestException('该邀请已处理');
+    const link = await this.prisma.parentStudentLink.findFirst({
+      where: { parentId: userId, studentId: invite.studentId },
+    });
+    if (!link) throw new ForbiddenException('无权处理该邀请');
+    await this.prisma.eventTeamInvite.update({
+      where: { id: invite.id },
+      data: { status: 'DECLINED', respondedAt: new Date() },
+    });
+    return { declined: true };
+  }
+
 }
 
 /** CSV 单元格转义：含逗号/引号/换行时加引号并转义引号 */

@@ -269,6 +269,7 @@ enum NotificationType {
   WAITLIST_PROMOTED // v2 R1：候补转正通知
   ENROLLMENT_CREATED // 管理员代报名成功通知（含私教课建课自动报名）
   MESSAGE_RECEIVED // 用户发私信时通知所有管理员
+  TEAM_INVITE // 管理员组队邀请
 }
 
 enum NotificationSourceType {
@@ -325,6 +326,7 @@ model User {
   attendanceConfirmed AttendanceRecord[]   @relation("AttendanceConfirmer")
   holidaysCreated   Holiday[]              @relation("HolidayCreator")
   cancelRequestsReviewed OccurrenceCancelRequest[] @relation("CancelRequestReviewer")
+  sentTeamInvites    EventTeamInvite[]
 }
 
 // --------------------------- 2.2 Instructor ---------------------------------
@@ -370,6 +372,7 @@ model Student {
   parentLinks        ParentStudentLink[]
   enrollments        Enrollment[]
   eventRegistrations EventRegistration[]
+  teamInvites        EventTeamInvite[]
   extraLessonRequests ExtraLessonRequest[]
   studentReviews     StudentReview[]
   documentSignatures DocumentSignature[]
@@ -611,6 +614,7 @@ model Event {
   updatedAt           DateTime      @updatedAt
 
   registrations EventRegistration[]
+  teamInvites  EventTeamInvite[]
 }
 
 // --------------------- 2.13 EventRegistration（+ 6.6） -----------------------
@@ -644,6 +648,26 @@ model EventRegistration {
 }
 
 // ------------- 6.6 EventRegistrationOrder（活动报名-订单关联） ----------------
+
+// 049: 管理员组队邀请——管理员选定学员发起，家长接受后自动建带 groupKey 的报名
+model EventTeamInvite {
+  id          String   @id @default(uuid())
+  eventId     String
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  groupKey    String
+  groupName   String
+  studentId   String
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  invitedById String
+  invitedBy   User     @relation(fields: [invitedById], references: [id])
+  status      String   @default("PENDING") // PENDING / ACCEPTED / DECLINED
+  createdAt   DateTime @default(now())
+  respondedAt DateTime?
+
+  @@unique([eventId, groupKey, studentId])
+  @@index([studentId])
+  @@index([eventId])
+}
 
 model EventRegistrationOrder {
   eventRegistrationId String
