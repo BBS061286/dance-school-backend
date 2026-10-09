@@ -330,6 +330,22 @@ export class StudentsService {
   }
 
   /** 家长移除孩子关联：DELETE /me/students/:id */
+  async parentUpdateStudent(parentId: string, studentId: string, dto: { name?: string; dob?: string; gender?: any }) {
+    const link = await this.prisma.parentStudentLink.findUnique({
+      where: { parentId_studentId: { parentId, studentId } },
+    });
+    if (!link) throw new ForbiddenException('该学员不属于您');
+    const data: any = {};
+    if (dto.name !== undefined) data.name = dto.name;
+    if (dto.gender !== undefined) data.gender = dto.gender;
+    if (dto.dob !== undefined) {
+      const d = new Date(dto.dob);
+      if (Number.isNaN(d.getTime())) throw new BadRequestException('出生日期格式非法');
+      data.dob = d;
+    }
+    return this.prisma.student.update({ where: { id: studentId }, data });
+  }
+
   async parentRemoveStudent(parentId: string, studentId: string) {
     const link = await this.prisma.parentStudentLink.findUnique({
       where: { parentId_studentId: { parentId, studentId } },
