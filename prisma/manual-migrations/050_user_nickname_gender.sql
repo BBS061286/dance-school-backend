@@ -1,0 +1,5 @@
+-- 050: User 加昵称和性别
+-- 幂等：IF NOT EXISTS
+
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "nickname" TEXT;
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "gender" TEXT;

@@ -47,10 +47,20 @@ export class UsersController {
     @Request() req: { user: RequestUser },
     @Body() dto: UpdateMeDto,
   ) {
-    const userData: { name?: string; preferredCampusIds?: string[] } = {};
+    const userData: { name?: string; nickname?: string | null; gender?: any; phone?: string | null; email?: string; avatarUrl?: string | null; preferredCampusIds?: string[] } = {};
     if (dto.name !== undefined) userData.name = dto.name;
+    if (dto.nickname !== undefined) userData.nickname = dto.nickname || null;
+    if (dto.gender !== undefined) userData.gender = dto.gender;
+    if (dto.phone !== undefined) userData.phone = dto.phone || null;
+    if (dto.avatarUrl !== undefined) userData.avatarUrl = dto.avatarUrl || null;
     if (dto.preferred_campus_ids !== undefined) {
       userData.preferredCampusIds = dto.preferred_campus_ids;
+    }
+    // 邮箱唯一性校验
+    if (dto.email !== undefined && dto.email !== req.user.email) {
+      const exists = await this.prisma.user.findUnique({ where: { email: dto.email } });
+      if (exists) throw new BadRequestException('该邮箱已被使用');
+      userData.email = dto.email;
     }
     if (Object.keys(userData).length > 0) {
       await this.prisma.user.update({

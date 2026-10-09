@@ -1,4 +1,5 @@
-import { IsDateString, IsInt, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { IsDateString, IsEmail, IsEnum, IsInt, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { Gender } from '@prisma/client';
 
 /**
  * 编辑自己资料（§6.10）：
@@ -10,6 +11,31 @@ export class UpdateMeDto {
   @IsOptional()
   @IsString()
   name?: string;
+
+  /** 昵称（名字偏好） */
+  @IsOptional()
+  @IsString()
+  nickname?: string;
+
+  /** 性别 */
+  @IsOptional()
+  @IsEnum(Gender)
+  gender?: Gender;
+
+  /** 电话 */
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  /** 邮箱 */
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  /** 头像 URL */
+  @IsOptional()
+  @IsString()
+  avatarUrl?: string;
 
   /** 出生日期（推荐） */
   @IsOptional()

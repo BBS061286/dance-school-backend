@@ -24,14 +24,18 @@ export class UsersService {
     const { passwordHash: _omitted, ...safe } = user;
 
     let age: number | undefined;
+    let dob: string | undefined;
     if (user.role === 'ADULT_STUDENT') {
       const link = await this.prisma.parentStudentLink.findFirst({
         where: { parentId: userId, relationship: 'SELF' },
         include: { student: true },
       });
-      if (link?.student?.dob) age = calcAge(link.student.dob);
+      if (link?.student?.dob) {
+        age = calcAge(link.student.dob);
+        dob = link.student.dob.toISOString();
+      }
     }
-    return { ...safe, age };
+    return { ...safe, age, dob };
   }
 
   /**
