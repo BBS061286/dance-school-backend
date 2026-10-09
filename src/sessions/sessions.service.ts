@@ -63,4 +63,31 @@ export class SessionsService {
       },
     });
   }
+
+  /** GET /admin/schedule（ADMIN）：课表日历，按日期范围查课次 */
+  async schedule(from: string, to: string, campusId?: string) {
+    const where: any = {
+      date: { gte: new Date(from), lte: new Date(to) },
+    };
+    if (campusId) {
+      where.classSession = { campusId };
+    }
+    const occurrences = await this.prisma.sessionOccurrence.findMany({
+      where,
+      include: {
+        classSession: {
+          select: {
+            id: true,
+            startTime: true,
+            endTime: true,
+            course: { select: { id: true, title: true } },
+            campus: { select: { id: true, name: true } },
+            instructor: { select: { id: true, user: { select: { name: true } } } },
+          },
+        },
+      },
+      orderBy: [{ date: 'asc' }, { classSession: { startTime: 'asc' } }],
+    });
+    return occurrences;
+  }
 }
