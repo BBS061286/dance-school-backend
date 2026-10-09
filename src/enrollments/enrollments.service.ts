@@ -207,7 +207,7 @@ export class EnrollmentsService {
                 term: { select: { id: true, name: true } },
               },
             },
-            campus: { select: { id: true, name: true } },
+            campus: { select: { id: true, name: true, address: true } },
             instructor: {
               select: { id: true, user: { select: { name: true } } },
             },
