@@ -134,30 +134,4 @@ export class DemoService {
   }
 
 
-  /** 创建演示停课申请（赵老师申请停 10-10 少儿街舞进阶） */
-  async seedCancelRequest() {
-    const instructor = await this.prisma.instructor.findFirst({
-      where: { user: { email: 'zhao@danceschool.local' } },
-    });
-    if (!instructor) throw new Error('instructor not found');
-    const occurrence = await this.prisma.sessionOccurrence.findFirst({
-      where: {
-        id: 'd7656d0f-e94e-4106-bd46-de016f8c9635',
-      },
-    });
-    if (!occurrence) throw new Error('occurrence not found');
-    // 幂等：已有则跳过
-    const existing = await this.prisma.occurrenceCancelRequest.findFirst({
-      where: { occurrenceId: occurrence.id, status: 'PENDING' },
-    });
-    if (existing) return existing;
-    return this.prisma.occurrenceCancelRequest.create({
-      data: {
-        occurrenceId: occurrence.id,
-        instructorId: instructor.id,
-        reason: '10月10日需参加市舞蹈家协会研讨会，申请停课一次，希望顺延补上',
-        postpone: true,
-      },
-    });
-  }
 }
