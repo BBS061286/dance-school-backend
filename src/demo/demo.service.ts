@@ -137,46 +137,42 @@ export class DemoService {
 
   /** 给演示班次批量加报名（成人+少儿） */
   async seedRoster() {
-    // 找少儿街舞进阶和成人爵士舞的班次
     const sessions = await this.prisma.classSession.findMany({
-      where: {
-        course: { title: { in: ['少儿街舞进阶', '成人爵士舞'] } },
-      },
+      where: { course: { title: { in: ['少儿街舞进阶', '成人爵士舞', '少年芭蕾', '成人现代舞'] } } },
       include: { course: { select: { title: true } } },
-      take: 4,
+      take: 8,
     });
-    if (sessions.length === 0) throw new Error('no sessions found');
-    // 找演示学员
-    const students = await this.prisma.student.findMany({
-      where: { name: { in: ['张小雨', '张小阳', '李小天', '孙小雨', '刘思思', '刘洋', '周婷', '吴刚', '林琳', '冯小小', '冯子琪', '刘天天'] } },
-      take: 12,
-    });
+    const students = await this.prisma.student.findMany({ take: 20 });
     const admin = await this.prisma.user.findFirst({ where: { email: 'admin@danceschool.local' } });
+    if (!admin) throw new Error('admin not found');
     let created = 0;
+    const results: string[] = [];
     for (const se of sessions) {
-      const isYouth = se.course.title.includes('少儿');
+      const isYouth = /少儿|少年|儿童/.test(se.course.title);
+      let added = 0;
       for (const st of students) {
-        // 简单按名字分配：少儿班用名字带"小"的，成人班用其他的
-        const isYouthName = st.name.includes('小');
+        if (added >= 5) break;
+        const isYouthName = /小/.test(st.name);
         if (isYouth !== isYouthName) continue;
         const existing = await this.prisma.enrollment.findFirst({
           where: { classSessionId: se.id, studentId: st.id },
         });
         if (existing) continue;
+        const isWaitlist = added === 4;
         await this.prisma.enrollment.create({
           data: {
             classSessionId: se.id,
             studentId: st.id,
-            enrolledByParentId: admin!.id,
-            status: created % 5 === 4 ? 'WAITLISTED' : 'CONFIRMED',
-            waitlistPosition: created % 5 === 4 ? 1 : null,
+            enrolledByParentId: admin.id,
+            status: isWaitlist ? 'WAITLISTED' : 'CONFIRMED',
+            waitlistPosition: isWaitlist ? 1 : null,
           },
         });
         created++;
-        if (created >= 16) break;
+        added++;
       }
-      if (created >= 16) break;
+      results.push(`${se.course.title}: +${added}`);
     }
-    return { created, sessions: sessions.map((s) => s.course.title) };
+    return { created, results };
   }
 }
