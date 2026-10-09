@@ -135,44 +135,4 @@ export class DemoService {
 
 
 
-  /** 给演示班次批量加报名（成人+少儿） */
-  async seedRoster() {
-    const sessions = await this.prisma.classSession.findMany({
-      where: { course: { title: { in: ['少儿街舞进阶', '成人爵士舞', '少年芭蕾', '成人现代舞'] } } },
-      include: { course: { select: { title: true } } },
-      take: 8,
-    });
-    const students = await this.prisma.student.findMany({ take: 20 });
-    const admin = await this.prisma.user.findFirst({ where: { email: 'admin@danceschool.local' } });
-    if (!admin) throw new Error('admin not found');
-    let created = 0;
-    const results: string[] = [];
-    for (const se of sessions) {
-      const isYouth = /少儿|少年|儿童/.test(se.course.title);
-      let added = 0;
-      for (const st of students) {
-        if (added >= 5) break;
-        const isYouthName = /小/.test(st.name);
-        if (isYouth !== isYouthName) continue;
-        const existing = await this.prisma.enrollment.findFirst({
-          where: { classSessionId: se.id, studentId: st.id },
-        });
-        if (existing) continue;
-        const isWaitlist = added === 4;
-        await this.prisma.enrollment.create({
-          data: {
-            classSessionId: se.id,
-            studentId: st.id,
-            enrolledByParentId: admin.id,
-            status: isWaitlist ? 'WAITLISTED' : 'CONFIRMED',
-            waitlistPosition: isWaitlist ? 1 : null,
-          },
-        });
-        created++;
-        added++;
-      }
-      results.push(`${se.course.title}: +${added}`);
-    }
-    return { created, results };
-  }
 }

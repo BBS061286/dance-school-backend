@@ -17,12 +17,6 @@ export class DemoController {
 
   /** 给课程补介绍 */
   @Roles(UserRole.ADMIN)
-  @Post('admin/demo/seed-roster')
-  @Roles(UserRole.ADMIN)
-  seedRoster() {
-    return this.demo.seedRoster();
-  }
-
   @Post('admin/demo/seed-descriptions')
   seedDescriptions() {
     return this.demo.seedDescriptions();
