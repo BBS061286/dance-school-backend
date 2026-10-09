@@ -81,8 +81,8 @@ export class StudentsController {
     return this.students.parentCreate(req.user.id, dto);
   }
 
-  /** 家长查看孩子详情：GET /me/students/:id?term= */
-  @Roles(UserRole.PARENT)
+  /** 家长查看孩子详情 / 成人查看自己详情：GET /me/students/:id?term= */
+  @Roles(UserRole.PARENT, UserRole.ADULT_STUDENT)
   @Get('me/students/:id')
   parentGetStudent(
     @Request() req: { user: { id: string } },
