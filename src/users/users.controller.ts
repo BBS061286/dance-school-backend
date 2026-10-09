@@ -1,9 +1,10 @@
-import { BadRequestException, Body, Controller, Get, Patch, Post, Request } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Patch, Post, Request, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RequestUser } from '../common/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateMeDto } from './dto/update-me.dto';
+import { LocalFileInterceptor, UploadedLocalFile } from '../common/local-upload';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { AuthService } from '../auth/auth.service';
 import { UsersService } from './users.service';
@@ -87,6 +88,22 @@ export class UsersController {
       });
     }
 
+    return this.usersService.getMe(req.user.id);
+  }
+
+  /** 自己上传头像：POST /me/avatar（PARENT / ADULT_STUDENT） */
+  @Roles(UserRole.PARENT, UserRole.ADULT_STUDENT)
+  @Post('me/avatar')
+  @UseInterceptors(LocalFileInterceptor())
+  async uploadAvatar(
+    @Request() req: { user: RequestUser },
+    @UploadedFile() file?: UploadedLocalFile,
+  ) {
+    if (!file) throw new BadRequestException('请上传图片文件');
+    await this.prisma.user.update({
+      where: { id: req.user.id },
+      data: { avatarUrl: `/uploads/${file.filename}` },
+    });
     return this.usersService.getMe(req.user.id);
   }
 
