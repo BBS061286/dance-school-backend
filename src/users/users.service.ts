@@ -47,13 +47,13 @@ export class UsersService {
     if (user.role === 'ADULT_STUDENT') {
       const link = await this.prisma.parentStudentLink.findFirst({
         where: { parentId: user.id, relationship: 'SELF' },
-        include: { student: { select: { id: true, name: true } } },
+        include: { student: { select: { id: true, name: true, photoUrl: true } } },
       });
       return link?.student ? [link.student] : [];
     }
     const links = await this.prisma.parentStudentLink.findMany({
       where: { parentId: user.id },
-      include: { student: { select: { id: true, name: true } } },
+      include: { student: { select: { id: true, name: true, photoUrl: true } } },
       orderBy: { createdAt: 'asc' },
     });
     return links.map((l) => l.student);
