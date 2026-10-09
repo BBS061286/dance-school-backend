@@ -21,4 +21,11 @@ export class DemoController {
   seedDescriptions() {
     return this.demo.seedDescriptions();
   }
+
+  /** 临时：删除学员（含关联） */
+  @Roles(UserRole.ADMIN)
+  @Post('admin/demo/delete-student')
+  async deleteStudent(@Body() dto: { student_id: string }) {
+    return this.demo.deleteStudent(dto.student_id);
+  }
 }

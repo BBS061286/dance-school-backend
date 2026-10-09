@@ -133,4 +133,12 @@ export class DemoService {
     return { message: `已为 ${updated} 门课程补充介绍`, updated };
   }
 
+  /** 删除学员及其关联（演示清理用） */
+  async deleteStudent(studentId: string) {
+    const st = await this.prisma.student.findUnique({ where: { id: studentId } });
+    if (!st) return { ok: false, message: '学员不存在' };
+    await this.prisma.parentStudentLink.deleteMany({ where: { studentId } });
+    await this.prisma.student.delete({ where: { id: studentId } });
+    return { ok: true, name: st.name };
+  }
 }
