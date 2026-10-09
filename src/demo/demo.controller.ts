@@ -21,4 +21,11 @@ export class DemoController {
   seedDescriptions() {
     return this.demo.seedDescriptions();
   }
+
+  /** 临时：给演示成人造在上课的课程数据 */
+  @Roles(UserRole.ADMIN)
+  @Post('admin/demo/seed-progress')
+  seedProgress() {
+    return this.demo.seedProgress();
+  }
 }
