@@ -28,4 +28,11 @@ export class DemoController {
   async deleteStudent(@Body() dto: { student_id: string }) {
     return this.demo.deleteStudent(dto.student_id);
   }
+
+  /** 临时：查家长的孩子 */
+  @Roles(UserRole.ADMIN)
+  @Post('admin/demo/parent-children')
+  async parentChildren(@Body() dto: { parent_id: string }) {
+    return this.demo.parentChildren(dto.parent_id);
+  }
 }

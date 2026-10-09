@@ -141,4 +141,12 @@ export class DemoService {
     await this.prisma.student.delete({ where: { id: studentId } });
     return { ok: true, name: st.name };
   }
+
+  async parentChildren(parentId: string) {
+    const links = await this.prisma.parentStudentLink.findMany({
+      where: { parentId },
+      include: { student: { select: { id: true, name: true } } },
+    });
+    return links.map((l) => ({ linkId: l.id, studentId: l.student.id, name: l.student.name }));
+  }
 }
