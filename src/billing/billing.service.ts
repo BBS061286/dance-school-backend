@@ -474,7 +474,27 @@ export class BillingService {
         items: {
           include: {
             enrollment: {
-              select: { id: true, student: { select: { name: true } } },
+              select: {
+                id: true,
+                student: { select: { name: true } },
+                classSession: {
+                  select: {
+                    course: {
+                      select: {
+                        id: true,
+                        title: true,
+                        term: { select: { id: true, name: true } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            eventRegistration: {
+              select: {
+                id: true,
+                event: { select: { id: true, title: true } },
+              },
             },
           },
         },
