@@ -17,6 +17,12 @@ export class DemoController {
 
   /** 给课程补介绍 */
   @Roles(UserRole.ADMIN)
+  @Post('admin/demo/seed-cancel-request')
+  @Roles(UserRole.ADMIN)
+  seedCancelRequest() {
+    return this.demo.seedCancelRequest();
+  }
+
   @Post('admin/demo/seed-descriptions')
   seedDescriptions() {
     return this.demo.seedDescriptions();
