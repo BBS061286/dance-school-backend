@@ -19,6 +19,7 @@ import {
   CreateStudentReviewDto,
 } from '../reviews/dto/review.dto';
 import {
+  InstructorBatchCheckInDto,
   InstructorCheckInDto,
   UpdateInstructorProfileDto,
 } from './dto/teacher.dto';
@@ -54,6 +55,12 @@ export class TeacherController {
   }
 
   @Roles(UserRole.INSTRUCTOR)
+  @Get('me/instructor/parents')
+  parents(@Request() req: { user: RequestUser }) {
+    return this.teacher.parents(req.user.id);
+  }
+
+  @Roles(UserRole.INSTRUCTOR)
   @Get('me/instructor/substitutes')
   substitutes(@Request() req: { user: RequestUser }) {
     return this.teacher.substitutes(req.user.id);
@@ -73,6 +80,17 @@ export class TeacherController {
     @Body() dto: InstructorCheckInDto,
   ) {
     return this.teacher.checkIn(req.user.id, id, dto.enrollment_id, dto.status);
+  }
+
+  /** 一键全员点名：{ studentIds }，单个失败不影响其他 */
+  @Roles(UserRole.INSTRUCTOR)
+  @Post('me/instructor/occurrences/:id/check-in/batch')
+  checkInBatch(
+    @Request() req: { user: RequestUser },
+    @Param('id') id: string,
+    @Body() dto: InstructorBatchCheckInDto,
+  ) {
+    return this.teacher.checkInBatch(req.user.id, id, dto.studentIds);
   }
 
   @Roles(UserRole.INSTRUCTOR)
@@ -117,6 +135,12 @@ export class TeacherController {
     @Body() dto: CreateStudentReviewDto,
   ) {
     return this.teacher.createStudentReview(req.user, id, dto);
+  }
+
+  @Roles(UserRole.INSTRUCTOR)
+  @Get('me/instructor/reviews')
+  myReviews(@Request() req: { user: RequestUser }) {
+    return this.teacher.myReviews(req.user.id);
   }
 
   /** 家长为孩子上传照片：POST /me/students/:id/photo（§6.21） */

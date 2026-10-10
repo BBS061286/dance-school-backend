@@ -475,6 +475,26 @@ export class AttendanceService {
     });
   }
 
+  /** 教师撤回自己的停课申请：仅 PENDING 可撤 */
+  async withdrawCancelRequest(userId: string, id: string) {
+    const instructor = await this.prisma.instructor.findUnique({
+      where: { userId },
+    });
+    if (!instructor) throw new ForbiddenException('未找到教师档案');
+    const req = await this.prisma.occurrenceCancelRequest.findUnique({
+      where: { id },
+    });
+    if (!req) throw new NotFoundException('停课申请不存在');
+    if (req.instructorId !== instructor.id) {
+      throw new ForbiddenException('只能撤回自己的停课申请');
+    }
+    if (req.status !== 'PENDING') {
+      throw new BadRequestException('该申请已处理，无法撤回');
+    }
+    await this.prisma.occurrenceCancelRequest.delete({ where: { id } });
+    return { id, withdrawn: true };
+  }
+
   /** 停课申请列表（管理端） */
   async listCancelRequests(status?: string) {
     const where =

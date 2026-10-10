@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 
 /** 发送私信请求体（§6.22/6.23）：{ body, peerType?, peerId? }
  * peerType=ADMIN（默认，给管理员）| INSTRUCTOR（给老师，需 peerId=老师 userId） */
@@ -40,6 +40,12 @@ export class InitiateMessageDto {
   @IsOptional()
   @IsString({ message: 'contextStudentName 必须是字符串' })
   contextStudentName?: string;
+}
+
+/** 老师主动给所教学员的家长发起私信：{ parentId }（UUID） */
+export class InstructorInitiateDto {
+  @IsUUID('4', { message: 'parentId 必须是合法的 UUID' })
+  parentId: string;
 }
 
 /** 新建快捷回复模板：{ title, body } */

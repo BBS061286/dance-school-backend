@@ -383,6 +383,67 @@ export class MessagingService {
     return { marked: result.count };
   }
 
+  /**
+   * POST /me/instructor/messages/initiate：老师主动给所教学员的家长发起私信。
+   * 校验：parentId 必须是该老师任教学员的家长
+   * （classSession.instructorId → enrollments → student → parentLinks），否则 403。
+   * 会话复用家长视角的同一 thread（participant=家长，peerType=INSTRUCTOR，peerId=老师 userId），
+   * 找到已有则返回，没有则创建；并给家长发一条通知。通知失败不影响发起。
+   */
+  async instructorInitiate(instructor: RequestUser, parentId: string) {
+    const profile = await this.prisma.instructor.findUnique({
+      where: { userId: instructor.id },
+    });
+    if (!profile) throw new NotFoundException('未找到教师档案');
+
+    const target = await this.prisma.user.findUnique({
+      where: { id: parentId },
+      select: { id: true, role: true, isActive: true },
+    });
+    if (!target || !target.isActive) throw new NotFoundException('目标用户不存在或已停用');
+    if (target.role !== UserRole.PARENT) {
+      throw new BadRequestException('只能给家长发起私信');
+    }
+
+    const allowed = await this.prisma.parentStudentLink.count({
+      where: {
+        parentId,
+        student: {
+          enrollments: { some: { classSession: { instructorId: profile.id } } },
+        },
+      },
+    });
+    if (allowed === 0) {
+      throw new ForbiddenException('只能给自己所教学员的家长发起私信');
+    }
+
+    const thread = await this.findOrCreateThread(
+      parentId,
+      ParticipantRole.PARENT,
+      'INSTRUCTOR',
+      instructor.id,
+    );
+
+    try {
+      const sender = await this.prisma.user.findUnique({
+        where: { id: instructor.id },
+        select: { name: true },
+      });
+      const teacherName = sender?.name ?? '老师';
+      await this.notifications.notify({
+        userId: parentId,
+        type: NotificationType.MESSAGE_REPLY,
+        title: `${teacherName}发起了与你的私信会话`,
+        body: '点击查看并回复',
+        sourceType: NotificationSourceType.MESSAGE,
+        sourceId: thread.id,
+      });
+    } catch {
+      // 通知失败不影响发起
+    }
+    return { thread };
+  }
+
   // ------------------- 管理端（保持兼容，多会话） -------------------
 
   /** GET /admin/messages/threads?role=&search=：管理端收件箱，可按身份筛选、按姓名/电话搜索，带未读数 */

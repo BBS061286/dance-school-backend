@@ -17,6 +17,7 @@ import {
   AdminExtraLessonRequestsQuery,
   AdminExtraLessonSlotsQuery,
   CreateExtraLessonRequestDto,
+  ExtraLessonAttendanceDto,
   ProposeAltDto,
   RescheduleDto,
   ReviewSlotDto,
@@ -187,5 +188,28 @@ export class ExtraLessonsController {
     @Body() dto: ReviewSlotDto,
   ) {
     return this.lessons.reviewSlot(req.user.id, id, dto);
+  }
+
+  // ------------------------------------------------------------ 老师端学员出勤
+
+  /** 老师记私教课学员出勤（upsert）：{ studentId, status } */
+  @Roles(UserRole.INSTRUCTOR)
+  @Post('me/instructor/extra-lessons/slots/:slotId/attendance')
+  markSlotAttendance(
+    @Request() req: { user: RequestUser },
+    @Param('slotId') slotId: string,
+    @Body() dto: ExtraLessonAttendanceDto,
+  ) {
+    return this.lessons.markSlotAttendance(req.user.id, slotId, dto);
+  }
+
+  /** 老师查看某加课时段的学员出勤列表 */
+  @Roles(UserRole.INSTRUCTOR)
+  @Get('me/instructor/extra-lessons/slots/:slotId/attendance')
+  slotAttendance(
+    @Request() req: { user: RequestUser },
+    @Param('slotId') slotId: string,
+  ) {
+    return this.lessons.slotAttendance(req.user.id, slotId);
   }
 }

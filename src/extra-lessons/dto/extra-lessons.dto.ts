@@ -2,6 +2,7 @@ import {
   ArrayMinSize,
   IsArray,
   IsEnum,
+  IsIn,
   IsOptional,
   IsString,
   IsUUID,
@@ -105,4 +106,13 @@ export class AdminExtraLessonSlotsQuery {
   @IsOptional()
   @IsEnum(ExtraLessonAudience)
   audience?: ExtraLessonAudience;
+}
+
+/** 老师记私教课学员出勤：{ studentId, status: PRESENT|ABSENT } */
+export class ExtraLessonAttendanceDto {
+  @IsUUID('4', { message: 'studentId 必须是合法的 UUID' })
+  studentId: string;
+
+  @IsIn(['PRESENT', 'ABSENT'], { message: 'status 必须是 PRESENT 或 ABSENT' })
+  status: 'PRESENT' | 'ABSENT';
 }

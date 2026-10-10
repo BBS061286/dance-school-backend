@@ -21,6 +21,7 @@ import {
   AdminExtraLessonRequestsQuery,
   AdminExtraLessonSlotsQuery,
   CreateExtraLessonRequestDto,
+  ExtraLessonAttendanceDto,
   ExtraLessonSlotInput,
   ProposeAltDto,
   RescheduleDto,
@@ -527,6 +528,7 @@ export class ExtraLessonsService {
       include: { request: true },
     });
     await this.notifySlotStatus(updated);
+    await this.notifyInstructorOfDecision(updated.request, updated.id, 'CONFIRMED');
     return updated;
   }
 
@@ -546,6 +548,7 @@ export class ExtraLessonsService {
       include: { request: true },
     });
     await this.notifySlotStatus(updated);
+    await this.notifyInstructorOfDecision(updated.request, updated.id, 'DECLINED');
     return updated;
   }
 
@@ -654,5 +657,125 @@ export class ExtraLessonsService {
         sourceId: slot.id,
       });
     }
+  }
+
+  /**
+   * 家长/学员确认或拒绝加课时段后，通知授课老师。
+   * 仅 acceptSlot / declineSlot 调用（管理员 cancelSlot 不走这里）。
+   * 通知失败不影响主流程。
+   */
+  private async notifyInstructorOfDecision(
+    request: {
+      type: ExtraLessonType;
+      studentId: string;
+      instructorId: string | null;
+    },
+    slotId: string,
+    decision: 'CONFIRMED' | 'DECLINED',
+  ) {
+    if (!request.instructorId) return;
+    try {
+      const instructor = await this.prisma.instructor.findUnique({
+        where: { id: request.instructorId },
+        select: { userId: true },
+      });
+      if (!instructor) return;
+      const student = await this.prisma.student.findUnique({
+        where: { id: request.studentId },
+        select: { name: true },
+      });
+      const typeName = request.type === 'ONE_ON_ONE' ? '1对1加课' : '临时加课';
+      const studentName = student?.name ?? '学员';
+      await this.notifications.notify({
+        userId: instructor.userId,
+        type: NotificationType.EXTRA_LESSON_UPDATE,
+        title:
+          decision === 'CONFIRMED'
+            ? `${typeName}时段已确认`
+            : `${typeName}时段被拒绝`,
+        body:
+          decision === 'CONFIRMED'
+            ? `${studentName}确认了加课时段，请按时上课`
+            : `${studentName}拒绝了加课时段，请重新排时段`,
+        sourceType: NotificationSourceType.EXTRA_LESSON_SLOT,
+        sourceId: slotId,
+      });
+    } catch {
+      // 通知失败不影响主流程
+    }
+  }
+
+  // ------------------------------------------------------------ 老师端学员出勤
+
+  /** 归属校验：该时段所属加课申请的任教老师 */
+  private async requireOwnSlot(userId: string, slotId: string) {
+    const slot = await this.loadSlot(slotId);
+    const instructor = await this.prisma.instructor.findUnique({
+      where: { userId },
+    });
+    if (!instructor) throw new ForbiddenException('未找到教师档案');
+    if (slot.request.instructorId !== instructor.id) {
+      throw new ForbiddenException('只能操作自己任教的加课时段');
+    }
+    return slot;
+  }
+
+  /**
+   * POST /me/instructor/extra-lessons/slots/:slotId/attendance：
+   * 老师记私教课学员出勤（已有则更新）。
+   */
+  async markSlotAttendance(
+    userId: string,
+    slotId: string,
+    dto: ExtraLessonAttendanceDto,
+  ) {
+    await this.requireOwnSlot(userId, slotId);
+    const student = await this.prisma.student.findUnique({
+      where: { id: dto.studentId },
+      select: { id: true, name: true },
+    });
+    if (!student) throw new NotFoundException('学员不存在');
+    return this.prisma.extraLessonAttendance.upsert({
+      where: { slotId_studentId: { slotId, studentId: dto.studentId } },
+      update: {
+        status: dto.status,
+        checkedInAt: new Date(),
+        checkedInBy: userId,
+      },
+      create: {
+        slotId,
+        studentId: dto.studentId,
+        status: dto.status,
+        checkedInBy: userId,
+      },
+      include: { student: { select: { id: true, name: true, photoUrl: true } } },
+    });
+  }
+
+  /**
+   * GET /me/instructor/extra-lessons/slots/:slotId/attendance：
+   * 该时段的学员出勤列表（含加课申请的学员信息，方便前端展示待点名名单）。
+   */
+  async slotAttendance(userId: string, slotId: string) {
+    const slot = await this.requireOwnSlot(userId, slotId);
+    const attendances = await this.prisma.extraLessonAttendance.findMany({
+      where: { slotId },
+      include: { student: { select: { id: true, name: true, photoUrl: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+    const student = await this.prisma.student.findUnique({
+      where: { id: slot.request.studentId },
+      select: { id: true, name: true, photoUrl: true },
+    });
+    return {
+      slot: {
+        id: slot.id,
+        date: slot.date,
+        time: slot.time,
+        status: slot.status,
+        student,
+      },
+      attendances,
+    };
   }
 }

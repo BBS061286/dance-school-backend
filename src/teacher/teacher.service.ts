@@ -62,7 +62,10 @@ export class TeacherService {
   }
 
   /** PATCH /me/instructor/profile：{ bio, avatar_url }（头像写 User.avatarUrl） */
-  async updateProfile(userId: string, dto: { bio: string; avatar_url: string }) {
+  async updateProfile(
+    userId: string,
+    dto: { bio?: string; avatar_url?: string },
+  ) {
     const instructor = await this.requireInstructor(userId);
     const [updated] = await this.prisma.$transaction([
       this.prisma.instructor.update({
@@ -101,10 +104,51 @@ export class TeacherService {
     });
   }
 
+  /** GET /me/instructor/parents：我任教班级学员的家长（去重，附学员名） */
+  async parents(userId: string) {
+    const instructor = await this.requireInstructor(userId);
+    const sessions = await this.prisma.classSession.findMany({
+      where: { instructorId: instructor.id },
+      include: {
+        enrollments: {
+          where: { status: { in: ['CONFIRMED', 'PENDING_PAYMENT'] } },
+          include: {
+            student: {
+              select: {
+                id: true,
+                name: true,
+                parentLinks: {
+                  include: {
+                    parent: {
+                      select: { id: true, name: true, role: true, isActive: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const map = new Map<string, { id: string; name: string; students: string[] }>();
+    for (const s of sessions) {
+      for (const e of s.enrollments) {
+        for (const link of e.student.parentLinks) {
+          const p = link.parent;
+          if (p.role !== UserRole.PARENT || !p.isActive) continue;
+          const entry = map.get(p.id) ?? { id: p.id, name: p.name, students: [] as string[] };
+          if (!entry.students.includes(e.student.name)) entry.students.push(e.student.name);
+          map.set(p.id, entry);
+        }
+      }
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
+  }
+
   /** GET /me/instructor/substitutes：我代课的课次 */
   async substitutes(userId: string) {
     const instructor = await this.requireInstructor(userId);
-    return this.prisma.sessionOccurrence.findMany({
+    const rows = await this.prisma.sessionOccurrence.findMany({
       where: {
         substituteInstructorId: instructor.id,
         status: { notIn: ['CANCELLED'] },
@@ -114,7 +158,11 @@ export class TeacherService {
           include: {
             course: { select: { id: true, title: true, format: true } },
             campus: { select: { id: true, name: true } },
-            instructor: { include: { user: { select: { name: true } } } },
+            instructor: {
+              include: {
+                user: { select: { name: true, phone: true, email: true } },
+              },
+            },
             enrollments: {
               where: { status: { in: ['CONFIRMED', 'PENDING_PAYMENT'] } },
               include: {
@@ -127,6 +175,16 @@ export class TeacherService {
       },
       orderBy: { date: 'asc' },
     });
+    return rows.map((o) => ({
+      ...o,
+      originalInstructor: o.classSession.instructor
+        ? {
+            name: o.classSession.instructor.user.name,
+            phone: o.classSession.instructor.user.phone,
+            email: o.classSession.instructor.user.email,
+          }
+        : null,
+    }));
   }
 
   /** GET /me/instructor/extra-lessons：我的 1对1/group 私课安排 */
@@ -162,12 +220,27 @@ export class TeacherService {
     const enrollment = await this.prisma.enrollment.findUnique({
       where: { id: enrollmentId },
     });
-    if (!enrollment || enrollment.classSessionId !== occurrence.classSessionId) {
-      throw new BadRequestException('报名记录与本节课不匹配');
+    if (!enrollment) {
+      throw new BadRequestException('报名记录不存在');
+    }
+    // 补课放行：本班报名直接过；跨班则需有指向本课次的有效补课预约
+    let makeupBookingId: string | null = null;
+    if (enrollment.classSessionId !== occurrence.classSessionId) {
+      const booking = await this.prisma.makeupBooking.findFirst({
+        where: {
+          enrollmentId,
+          makeupOccurrenceId: occurrenceId,
+          status: { in: ['BOOKED', 'ATTENDED'] },
+        },
+      });
+      if (!booking) {
+        throw new BadRequestException('报名记录与本节课不匹配');
+      }
+      makeupBookingId = booking.id;
     }
     const targetStatus =
       status === 'ABSENT' ? AttendanceStatus.ABSENT : AttendanceStatus.CONFIRMED;
-    return this.prisma.attendanceRecord.upsert({
+    const record = await this.prisma.attendanceRecord.upsert({
       where: {
         sessionOccurrenceId_enrollmentId: {
           sessionOccurrenceId: occurrenceId,
@@ -189,6 +262,75 @@ export class TeacherService {
         confirmedAt: new Date(),
       },
     });
+    // 补课点名成功且到场：BOOKED 的预约顺手标为 ATTENDED
+    if (makeupBookingId && targetStatus === AttendanceStatus.CONFIRMED) {
+      await this.prisma.makeupBooking.updateMany({
+        where: { id: makeupBookingId, status: 'BOOKED' },
+        data: { status: 'ATTENDED' },
+      });
+    }
+    return record;
+  }
+
+  /**
+   * POST /me/instructor/occurrences/:id/check-in/batch：一键全员点名。
+   * 复用单个点名逻辑（含补课放行、归属校验），单个失败不影响其他。
+   */
+
+  async checkInBatch(
+    userId: string,
+    occurrenceId: string,
+    studentIds: string[],
+  ): Promise<{
+    success: string[];
+    failed: { studentId: string; reason: string }[];
+  }> {
+    const instructor = await this.requireInstructor(userId);
+    const occurrence = await this.requireOwnOccurrence(
+      occurrenceId,
+      instructor.id,
+    );
+    const success: string[] = [];
+    const failed: { studentId: string; reason: string }[] = [];
+    for (const studentId of studentIds) {
+      try {
+        // 先找本班报名
+        let enrollment = await this.prisma.enrollment.findFirst({
+          where: {
+            studentId,
+            classSessionId: occurrence.classSessionId,
+            status: { in: ['CONFIRMED', 'PENDING_PAYMENT'] },
+          },
+        });
+        // 没有则找指向本课次的补课预约，用其 enrollment
+        if (!enrollment) {
+          const booking = await this.prisma.makeupBooking.findFirst({
+            where: {
+              makeupOccurrenceId: occurrenceId,
+              status: { in: ['BOOKED', 'ATTENDED'] },
+              enrollment: { studentId },
+            },
+          });
+          if (booking) {
+            enrollment = await this.prisma.enrollment.findUnique({
+              where: { id: booking.enrollmentId },
+            });
+          }
+        }
+        if (!enrollment) {
+          failed.push({ studentId, reason: '该学员不在本班且无补课预约' });
+          continue;
+        }
+        await this.checkIn(userId, occurrenceId, enrollment.id, 'PRESENT');
+        success.push(studentId);
+      } catch (err) {
+        failed.push({
+          studentId,
+          reason: err instanceof Error ? err.message : '点名失败',
+        });
+      }
+    }
+    return { success, failed };
   }
 
   /**
@@ -370,6 +512,49 @@ export class TeacherService {
       dto,
       instructor.id,
     );
+  }
+
+  /** GET /me/instructor/reviews：当前老师发布过的评价历史（课程评价+学员评价合并，倒序，最多 50 条） */
+  async myReviews(userId: string) {
+    const [courseReviews, studentReviews] = await Promise.all([
+      this.prisma.courseReview.findMany({
+        where: { createdById: userId },
+        include: { course: { select: { id: true, title: true } } },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      }),
+      this.prisma.studentReview.findMany({
+        where: { createdById: userId },
+        include: {
+          student: { select: { id: true, name: true } },
+          classSession: {
+            include: { course: { select: { id: true, title: true } } },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      }),
+    ]);
+    return [
+      ...courseReviews.map((r) => ({
+        kind: 'COURSE' as const,
+        id: r.id,
+        content: r.content,
+        createdAt: r.createdAt,
+        course: r.course,
+        student: null,
+      })),
+      ...studentReviews.map((r) => ({
+        kind: 'STUDENT' as const,
+        id: r.id,
+        content: r.content,
+        createdAt: r.createdAt,
+        course: r.classSession.course,
+        student: r.student,
+      })),
+    ]
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 50);
   }
 
   // ------------------------------------------------------------- 照片上传

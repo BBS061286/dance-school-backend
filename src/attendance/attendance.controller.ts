@@ -101,6 +101,16 @@ export class AttendanceController {
     return this.attendance.myCancelRequests(req.user.id);
   }
 
+  /** 教师撤回自己的停课申请（仅 PENDING） */
+  @Roles(UserRole.INSTRUCTOR)
+  @Delete('me/instructor/cancel-requests/:id')
+  withdrawCancelRequest(
+    @Request() req: { user: RequestUser },
+    @Param('id') id: string,
+  ) {
+    return this.attendance.withdrawCancelRequest(req.user.id, id);
+  }
+
   /** 停课申请列表（ADMIN）：?status=PENDING */
   @Roles(UserRole.ADMIN)
   @Get('admin/occurrence-cancel-requests')

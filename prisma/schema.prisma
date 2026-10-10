@@ -376,6 +376,7 @@ model Student {
   eventRegistrations EventRegistration[]
   teamInvites        EventTeamInvite[]
   extraLessonRequests ExtraLessonRequest[]
+  extraLessonAttendances ExtraLessonAttendance[]
   studentReviews     StudentReview[]
   documentSignatures DocumentSignature[]
   documentSendRecipients DocumentSendRecipient[]
@@ -955,6 +956,26 @@ model ExtraLessonSlot {
   updatedAt    DateTime              @updatedAt
 
   instructorCheckins InstructorCheckin[]
+
+  attendances ExtraLessonAttendance[]
+}
+
+// ------------------ 6.9b ExtraLessonAttendance -------------------------------
+// 私教课/加课的学员出勤记录（§6.20 老师端缺口补齐）。status 取值 PRESENT/ABSENT（TEXT 存）。
+
+model ExtraLessonAttendance {
+  id          String          @id @default(uuid())
+  slotId      String
+  slot        ExtraLessonSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  studentId   String
+  student     Student         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  status      String          // PRESENT=到场，ABSENT=缺席
+  checkedInAt DateTime        @default(now())
+  checkedInBy String?         // 点名的老师 userId
+  createdAt   DateTime        @default(now())
+
+  @@unique([slotId, studentId])
+  @@map("ExtraLessonAttendance")
 }
 
 // ------------------ 6.13 CourseReview / 6.14 StudentReview --------------------

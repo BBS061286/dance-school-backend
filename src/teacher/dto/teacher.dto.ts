@@ -1,14 +1,14 @@
-import { IsIn, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsIn, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 
-/** 教师端：更新个人资料（§6.17/6.20），头像复用 User.avatar_url */
+/** 教师端：更新个人资料（§6.17/6.20），头像复用 User.avatar_url；简介与头像均为选填 */
 export class UpdateInstructorProfileDto {
+  @IsOptional()
   @IsString({ message: 'bio 必须是字符串' })
-  @IsNotEmpty({ message: 'bio 不能为空' })
-  bio: string;
+  bio?: string;
 
+  @IsOptional()
   @IsString({ message: 'avatar_url 必须是字符串' })
-  @IsNotEmpty({ message: 'avatar_url 不能为空' })
-  avatar_url: string;
+  avatar_url?: string;
 }
 
 /** 教师点名：{ enrollment_id }（§6.20） */
@@ -20,4 +20,12 @@ export class InstructorCheckInDto {
   @IsOptional()
   @IsIn(['PRESENT', 'ABSENT'], { message: 'status 必须是 PRESENT 或 ABSENT' })
   status?: 'PRESENT' | 'ABSENT';
+}
+
+/** 教师一键点名：{ studentIds: string[] }（§6.20） */
+export class InstructorBatchCheckInDto {
+  @IsArray({ message: 'studentIds 必须是数组' })
+  @ArrayMaxSize(100, { message: '一次最多点名 100 人' })
+  @IsUUID('4', { each: true, message: 'studentIds 须为合法 UUID' })
+  studentIds: string[];
 }

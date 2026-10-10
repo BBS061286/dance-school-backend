@@ -15,6 +15,7 @@ import { RequestUser } from '../common/types';
 import {
   CreateTemplateDto,
   InitiateMessageDto,
+  InstructorInitiateDto,
   ReplyMessageDto,
   SendMessageDto,
 } from './dto/message.dto';
@@ -121,6 +122,16 @@ export class MessagingController {
     @Param('id') id: string,
   ) {
     return this.messaging.instructorMarkRead(req.user.id, id);
+  }
+
+  /** 教师端主动发起私信：POST /me/instructor/messages/initiate（INSTRUCTOR） */
+  @Roles(UserRole.INSTRUCTOR)
+  @Post('me/instructor/messages/initiate')
+  instructorInitiate(
+    @Request() req: { user: RequestUser },
+    @Body() dto: InstructorInitiateDto,
+  ) {
+    return this.messaging.instructorInitiate(req.user, dto.parentId);
   }
 
   /** 管理端收件箱：GET /admin/messages/threads?role=&search=（ADMIN） */
