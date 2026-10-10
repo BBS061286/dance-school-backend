@@ -17,6 +17,12 @@ export class DemoController {
 
   /** 给课程补介绍 */
   @Roles(UserRole.ADMIN)
+  @Post('admin/demo/seed-makeup-xiaowen')
+  @Roles(UserRole.ADMIN)
+  seedMakeupXiaowen() {
+    return this.demo.seedMakeupXiaowen();
+  }
+
   @Post('admin/demo/seed-descriptions')
   seedDescriptions() {
     return this.demo.seedDescriptions();

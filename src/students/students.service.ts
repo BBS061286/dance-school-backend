@@ -223,6 +223,33 @@ export class StudentsService {
             },
           },
         },
+        // 补课记录
+        makeupBookings: {
+          include: {
+            missedOccurrence: {
+              select: {
+                id: true,
+                sessionNumber: true,
+                date: true,
+                classSession: { select: { course: { select: { title: true } } } },
+              },
+            },
+            makeupOccurrence: {
+              select: {
+                id: true,
+                sessionNumber: true,
+                date: true,
+                classSession: {
+                  select: {
+                    course: { select: { title: true } },
+                    campus: { select: { name: true } },
+                  },
+                },
+              },
+            },
+          },
+          orderBy: { bookedAt: 'desc' },
+        },
       },
     });
 
@@ -276,6 +303,42 @@ export class StudentsService {
     const priv = courseCards.filter((c) => c.format === 'PRIVATE');
     const master = courseCards.filter((c) => c.format === 'MASTER');
 
+    // 补课记录（该学期报名下的，扁平化）
+    const makeupRecords = enrollments.flatMap((en) =>
+      (en.makeupBookings ?? []).map((b) => ({
+        id: b.id,
+        status: b.status,
+        bookedAt: b.bookedAt,
+        missed: b.missedOccurrence
+          ? {
+              courseTitle: b.missedOccurrence.classSession?.course?.title ?? '—',
+              sessionNumber: b.missedOccurrence.sessionNumber,
+              date: b.missedOccurrence.date ? b.missedOccurrence.date.toISOString().slice(0, 10) : null,
+            }
+          : null,
+        makeup: {
+          courseTitle: b.makeupOccurrence?.classSession?.course?.title ?? '—',
+          campus: b.makeupOccurrence?.classSession?.campus?.name ?? null,
+          sessionNumber: b.makeupOccurrence?.sessionNumber ?? null,
+          date: b.makeupOccurrence?.date ? b.makeupOccurrence.date.toISOString().slice(0, 10) : null,
+        },
+      })),
+    );
+
+    // 本学期补课额度
+    let makeupQuota: { quota: number; used: number; remaining: number } | null = null;
+    if (activeTermId) {
+      const term = await this.prisma.term.findUnique({ where: { id: activeTermId } });
+      if (term) {
+        const used = makeupRecords.filter((r) => r.status === 'BOOKED' || r.status === 'ATTENDED').length;
+        makeupQuota = {
+          quota: term.makeupQuota,
+          used,
+          remaining: Math.max(0, term.makeupQuota - used),
+        };
+      }
+    }
+
     // 私教加课申请（不过滤学期）
     const extraLessons = await this.prisma.extraLessonRequest.findMany({
       where: { studentId },
@@ -303,6 +366,8 @@ export class StudentsService {
       courses: { group, private: priv, master },
       attendance: { present: presentCount, absent: absentCount },
       absences: absences.slice(0, 20),
+      makeupQuota,
+      makeupRecords,
       extraLessons: extraLessons.map((r) => ({
         id: r.id,
         type: r.type,
