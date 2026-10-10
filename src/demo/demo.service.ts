@@ -136,22 +136,4 @@ export class DemoService {
 
 
 
-  /** 陈晓雯演示补课记录：缺现代舞第4节(10/8) → 补第6节(10/22) */
-  async seedMakeupXiaowen() {
-    const enrollmentId = '6a9fe3c8-346d-4387-a0b9-f36bbcfd159e';
-    const missedId = 'f9cdb4ff-0741-4283-a161-808322974b82';
-    const makeupId = 'f2819018-b87c-466f-ba7f-4127b5e817a6';
-    const existing = await this.prisma.makeupBooking.findFirst({
-      where: { enrollmentId, missedOccurrenceId: missedId },
-    });
-    if (existing) return existing;
-    return this.prisma.makeupBooking.create({
-      data: {
-        enrollmentId,
-        missedOccurrenceId: missedId,
-        makeupOccurrenceId: makeupId,
-        status: 'BOOKED',
-      },
-    });
-  }
 }
