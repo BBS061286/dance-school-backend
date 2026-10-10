@@ -9,6 +9,7 @@ import { BillingModule } from './billing/billing.module';
 import { CampusesModule } from './campuses/campuses.module';
 import { TermsModule } from './terms/terms.module';
 import { SessionsModule } from './sessions/sessions.module';
+import { StaffModule } from './staff/staff.module';
 import { CoursesModule } from './courses/courses.module';
 import { DocumentsModule } from './documents/documents.module';
 import { EnrollmentsModule } from './enrollments/enrollments.module';
@@ -58,6 +59,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     CampusesModule,
     TermsModule, // 学期管理
     SessionsModule, // 班次管理：新建班次
+    StaffModule, // 员工（管理员账号）管理
   ],
   providers: [
     // 全局守卫：先鉴权（@Public 标记的路由放行），再做角色校验
