@@ -197,8 +197,11 @@ export class AttendanceController {
   /** 生成签到二维码码值（ADMIN / INSTRUCTOR）：15 分钟有效，不存 DB */
   @Roles(UserRole.ADMIN, UserRole.INSTRUCTOR)
   @Post('admin/occurrences/:id/checkin-code')
-  createCheckInCode(@Param('id') id: string) {
-    return this.attendance.createCheckInCode(id);
+  createCheckInCode(
+    @Request() req: { user: RequestUser },
+    @Param('id') id: string,
+  ) {
+    return this.attendance.createCheckInCode(id, req.user);
   }
 
   /** 扫码打卡（家长 / 成人学员）：{ code, enrollment_id, signature? } */

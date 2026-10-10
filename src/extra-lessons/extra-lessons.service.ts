@@ -28,10 +28,10 @@ import {
 } from './dto/extra-lessons.dto';
 
 /** §6.9 学员端状态映射文案（每次状态变更通知使用） */
-const STATUS_COPY: Record<ExtraLessonSlotStatus, (slot: any) => string> = {
+const STATUS_COPY: Record<ExtraLessonSlotStatus, (slot: any, who?: string) => string> = {
   PENDING_ADMIN: () => '已提交，等待老师/管理员确认',
-  ADMIN_PROPOSED_ALT: (slot) =>
-    `管理员建议改期到 ${fmtDate(slot.altDate)} ${slot.altTime ?? ''}，请确认是否同意`,
+  ADMIN_PROPOSED_ALT: (slot, who = '管理员') =>
+    `${who}建议改期到 ${fmtDate(slot.altDate)} ${slot.altTime ?? ''}，请确认是否同意`,
   PENDING_STUDENT: () => '等待你确认新时间',
   CONFIRMED: () => '已确认，请按时到场',
   DECLINED: () => '该时段未通过，请重新选择时间',
@@ -237,10 +237,20 @@ export class ExtraLessonsService {
    * 建议新时间（仅 ONE_ON_ONE）→ ADMIN_PROPOSED_ALT。
    * admin_note 可选，写入申请单的 adminNote。
    */
-  async proposeAlt(adminId: string, slotId: string, dto: ProposeAltDto) {
+  async proposeAlt(user: RequestUser, slotId: string, dto: ProposeAltDto) {
     const slot = await this.loadSlot(slotId);
     if (slot.request.type !== 'ONE_ON_ONE') {
       throw new BadRequestException('建议新时间仅适用于 1 对 1 加课');
+    }
+    // 归属校验：ADMIN 放行；INSTRUCTOR 只能操作自己任教的加课申请
+    if (user.role !== 'ADMIN') {
+      const instructor = await this.prisma.instructor.findUnique({
+        where: { userId: user.id },
+      });
+      if (!instructor) throw new ForbiddenException('未找到教师档案');
+      if (slot.request.instructorId !== instructor.id) {
+        throw new ForbiddenException('只能为自己任教的加课建议改期');
+      }
     }
     this.assertTransitionAllowed(slot.status, 'propose-alt');
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -261,7 +271,7 @@ export class ExtraLessonsService {
       }
       return s;
     });
-    await this.notifySlotStatus(updated);
+    await this.notifySlotStatus(updated, user.role === 'INSTRUCTOR' ? '老师' : '管理员');
     return updated;
   }
 
@@ -621,6 +631,7 @@ export class ExtraLessonsService {
    */
   private async notifySlotStatus(
     slot: { id: string; status: ExtraLessonSlotStatus; altDate: Date | null; altTime: string | null; request: { type: ExtraLessonType; studentId: string; createdById: string } },
+    proposedBy?: string,
   ) {
     const links = await this.prisma.parentStudentLink.findMany({
       where: { studentId: slot.request.studentId },
@@ -631,7 +642,7 @@ export class ExtraLessonsService {
 
     const typeName = slot.request.type === 'ONE_ON_ONE' ? '1对1加课' : '临时加课';
     const title = `${typeName}时段更新`;
-    const body = STATUS_COPY[slot.status](slot);
+    const body = STATUS_COPY[slot.status](slot, proposedBy);
 
     for (const userId of userIds) {
       await this.notifications.notify({

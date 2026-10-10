@@ -705,13 +705,29 @@ export class AttendanceService {
   /**
    * 生成签到二维码码值（POST /admin/occurrences/:id/checkin-code）：
    * HMAC-SHA256 签名，15 分钟有效，不存 DB。
+   * 归属校验：ADMIN 放行；INSTRUCTOR 只能为自己任教（含代课）的课次生成。
    */
-  async createCheckInCode(occurrenceId: string) {
+  async createCheckInCode(occurrenceId: string, user: RequestUser) {
     const occurrence = await this.prisma.sessionOccurrence.findUnique({
       where: { id: occurrenceId },
-      select: { id: true },
+      select: {
+        id: true,
+        substituteInstructorId: true,
+        classSession: { select: { instructorId: true } },
+      },
     });
     if (!occurrence) throw new NotFoundException(`课次不存在：${occurrenceId}`);
+    if (user.role !== 'ADMIN') {
+      const instructor = await this.prisma.instructor.findUnique({
+        where: { userId: user.id },
+      });
+      if (!instructor) throw new ForbiddenException('未找到教师档案');
+      const isOwner = occurrence.classSession.instructorId === instructor.id;
+      const isSubstitute = occurrence.substituteInstructorId === instructor.id;
+      if (!isOwner && !isSubstitute) {
+        throw new ForbiddenException('只能为自己任教的课次生成签到码');
+      }
+    }
     return { code: signCheckInCode(occurrence.id) };
   }
 

@@ -74,11 +74,14 @@ export class DemoService {
     }
 
     const parentLink = await this.prisma.parentStudentLink.findFirst({ where: { studentId } });
+    if (!parentLink) {
+      throw new Error(`演示种子：学员 ${studentId} 无家长关联，无法创建报名（enrolledByParentId 不允许为空）`);
+    }
     const enrollment = await this.prisma.enrollment.create({
       data: {
         studentId,
         classSessionId: session.id,
-        enrolledByParentId: parentLink?.parentId ?? '',
+        enrolledByParentId: parentLink.parentId,
         status: 'CONFIRMED',
       },
     });

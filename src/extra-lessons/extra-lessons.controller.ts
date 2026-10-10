@@ -126,15 +126,15 @@ export class ExtraLessonsController {
     return this.lessons.approveSlot(req.user.id, id);
   }
 
-  /** 建议新时间（仅 ONE_ON_ONE）→ ADMIN_PROPOSED_ALT（ADMIN） */
-  @Roles(UserRole.ADMIN)
+  /** 建议新时间（仅 ONE_ON_ONE）→ ADMIN_PROPOSED_ALT（ADMIN / 任教老师） */
+  @Roles(UserRole.ADMIN, UserRole.INSTRUCTOR)
   @Post('admin/extra-lesson-slots/:id/propose-alt')
   proposeAlt(
     @Request() req: { user: RequestUser },
     @Param('id') id: string,
     @Body() dto: ProposeAltDto,
   ) {
-    return this.lessons.proposeAlt(req.user.id, id, dto);
+    return this.lessons.proposeAlt(req.user, id, dto);
   }
 
   /** 直接改期（仅 TEMP_GROUP）→ CONFIRMED（ADMIN） */

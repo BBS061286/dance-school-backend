@@ -161,7 +161,8 @@ export class InstructorsService {
   }
 
   /** 删除老师：DELETE /admin/instructors/:id
-   * 有未结束班级时拒绝（先停用或重新分配）；无负担时删除 Instructor + User */
+   * 有未结束班级时拒绝（先停用或重新分配）；有关联班级记录（任何状态）时也拒绝，
+   * 否则 instructor.delete() 会因 ClassSession.instructorId 外键约束报 500 */
   async remove(id: string) {
     const instructor = await this.prisma.instructor.findUnique({
       where: { id },
@@ -177,6 +178,12 @@ export class InstructorsService {
       throw new BadRequestException(
         `该老师还有 ${instructor.classSessions.length} 个未结束班级，请先重新分配或停用`,
       );
+    }
+    const sessionCount = await this.prisma.classSession.count({
+      where: { instructorId: id },
+    });
+    if (sessionCount > 0) {
+      throw new ConflictException('该老师名下有课程记录，无法删除');
     }
     await this.prisma.$transaction([
       this.prisma.instructor.delete({ where: { id } }),
