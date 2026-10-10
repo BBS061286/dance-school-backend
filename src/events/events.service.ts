@@ -1264,7 +1264,7 @@ export class EventsService {
   async acceptTeamInvite(userId: string, inviteId: string) {
     const invite = await this.prisma.eventTeamInvite.findUnique({
       where: { id: inviteId },
-      include: { event: true },
+      include: { event: true, student: { select: { name: true } } },
     });
     if (!invite) throw new NotFoundException('邀请不存在');
     if (invite.status !== 'PENDING') throw new BadRequestException('该邀请已处理');
@@ -1309,6 +1309,19 @@ export class EventsService {
       where: { id: invite.id },
       data: { status: 'ACCEPTED', respondedAt: new Date() },
     });
+    // 通知发起邀请的管理员（失败不影响接受结果）
+    try {
+      await this.notifications.notify({
+        userId: invite.invitedById,
+        type: NotificationType.NOTICE,
+        title: `组队邀请被接受：${event.title}`,
+        body: `【${invite.student?.name ?? '学员'}】接受了「${invite.groupName}」的组队邀请，已加入${event.title}。`,
+        sourceType: NotificationSourceType.EVENT,
+        sourceId: event.id,
+      });
+    } catch {
+      /* 忽略 */
+    }
     return { inviteId: invite.id, registrationId: registration!.id };
   }
 
@@ -1316,6 +1329,7 @@ export class EventsService {
   async declineTeamInvite(userId: string, inviteId: string) {
     const invite = await this.prisma.eventTeamInvite.findUnique({
       where: { id: inviteId },
+      include: { event: true, student: { select: { name: true } } },
     });
     if (!invite) throw new NotFoundException('邀请不存在');
     if (invite.status !== 'PENDING') throw new BadRequestException('该邀请已处理');
@@ -1327,6 +1341,19 @@ export class EventsService {
       where: { id: invite.id },
       data: { status: 'DECLINED', respondedAt: new Date() },
     });
+    // 通知发起邀请的管理员（失败不影响拒绝结果）
+    try {
+      await this.notifications.notify({
+        userId: invite.invitedById,
+        type: NotificationType.NOTICE,
+        title: `组队邀请被拒绝：${invite.event.title}`,
+        body: `【${invite.student?.name ?? '学员'}】拒绝了「${invite.groupName}」的组队邀请。`,
+        sourceType: NotificationSourceType.EVENT,
+        sourceId: invite.eventId,
+      });
+    } catch {
+      /* 忽略 */
+    }
     return { declined: true };
   }
 

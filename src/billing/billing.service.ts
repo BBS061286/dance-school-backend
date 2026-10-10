@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 import {
   CourseFormat,
+  NotificationSourceType,
+  NotificationType,
   OrderPaymentMethod,
   OrderStatus,
   Payment,
@@ -20,6 +22,8 @@ import {
 } from '../integrations/payments.provider';
 import { PrismaService } from '../prisma/prisma.service';
 import { RequestUser, TxClient } from '../common/types';
+import { resolveStudentRecipientUserIds } from '../common/student-recipients';
+import { NotificationsService } from '../notifications/notifications.service';
 import { AdminOrdersQuery, SetDiscountDto } from './dto/order.dto';
 import { RecordPaymentDto, RefundDto } from './dto/payment.dto';
 
@@ -57,6 +61,7 @@ export class BillingService {
     private readonly prisma: PrismaService,
     private readonly paymentsProvider: PaymentsProvider,
     private readonly enrollmentsService: EnrollmentsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   // ---------------------------------------------------------------- 核心派生
@@ -738,7 +743,7 @@ export class BillingService {
       stripeRefundId = refundId;
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const record = await this.prisma.$transaction(async (tx) => {
       const record = await tx.refundRecord.create({
         data: {
           orderId: order.id,
@@ -763,6 +768,55 @@ export class BillingService {
       }
       return record;
     });
+    // 退款成功通知学员首选家长/成人本人（失败不影响退款结果）
+    try {
+      await this.notifyRefundForEnrollment(record.id);
+    } catch {
+      /* 忽略 */
+    }
+    return record;
+  }
+
+  /** 课程报名退款成功通知：发给学员的首选家长（成人学员则为本人） */
+  private async notifyRefundForEnrollment(refundRecordId: string): Promise<void> {
+    const record = await this.prisma.refundRecord.findUnique({
+      where: { id: refundRecordId },
+      include: {
+        orderItem: {
+          include: {
+            enrollment: {
+              select: {
+                studentId: true,
+                student: { select: { name: true } },
+                classSession: { select: { course: { select: { title: true } } } },
+              },
+            },
+          },
+        },
+      },
+    });
+    const enrollment = record?.orderItem?.enrollment;
+    if (!enrollment) return;
+    const recipientIds = await resolveStudentRecipientUserIds(
+      this.prisma,
+      enrollment.studentId,
+    );
+    if (recipientIds.length === 0) return;
+    const dollars = (record!.amountCents / 100).toFixed(2);
+    const body =
+      `【${enrollment.student.name}】的《${enrollment.classSession.course.title}》` +
+      `已退款 $${dollars}${record!.reason ? `，原因：${record!.reason}` : ''}。` +
+      `退款将按原支付方式退回，如有疑问请联系学校。`;
+    for (const userId of recipientIds) {
+      await this.notifications.notify({
+        userId,
+        type: NotificationType.NOTICE,
+        title: '退款通知',
+        body,
+        sourceType: NotificationSourceType.ORDER,
+        sourceId: record!.orderId,
+      });
+    }
   }
 
   /**
@@ -1105,7 +1159,7 @@ export class BillingService {
       stripeRefundId = refundId;
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const record = await this.prisma.$transaction(async (tx) => {
       const record = await tx.refundRecord.create({
         data: {
           orderId: order.id,
@@ -1127,6 +1181,55 @@ export class BillingService {
       }
       return record;
     });
+    // 退款成功通知学员首选家长/成人本人（失败不影响退款结果）
+    try {
+      await this.notifyRefundForEventRegistration(record.id);
+    } catch {
+      /* 忽略 */
+    }
+    return record;
+  }
+
+  /** 活动报名退款成功通知：发给学员的首选家长（成人学员则为本人） */
+  private async notifyRefundForEventRegistration(refundRecordId: string): Promise<void> {
+    const record = await this.prisma.refundRecord.findUnique({
+      where: { id: refundRecordId },
+      include: {
+        orderItem: {
+          include: {
+            eventRegistration: {
+              select: {
+                studentId: true,
+                student: { select: { name: true } },
+                event: { select: { title: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    const reg = record?.orderItem?.eventRegistration;
+    if (!reg || !reg.studentId || !reg.student) return;
+    const recipientIds = await resolveStudentRecipientUserIds(
+      this.prisma,
+      reg.studentId,
+    );
+    if (recipientIds.length === 0) return;
+    const dollars = (record!.amountCents / 100).toFixed(2);
+    const body =
+      `【${reg.student.name}】的活动《${reg.event.title}》报名` +
+      `已退款 $${dollars}${record!.reason ? `，原因：${record!.reason}` : ''}。` +
+      `退款将按原支付方式退回，如有疑问请联系学校。`;
+    for (const userId of recipientIds) {
+      await this.notifications.notify({
+        userId,
+        type: NotificationType.NOTICE,
+        title: '退款通知',
+        body,
+        sourceType: NotificationSourceType.ORDER,
+        sourceId: record!.orderId,
+      });
+    }
   }
 
   /**

@@ -14,6 +14,7 @@ import {
 } from '@prisma/client';
 import { RequestUser } from '../common/types';
 import { PrismaService } from '../prisma/prisma.service';
+import { resolveStudentRecipientUserIds } from '../common/student-recipients';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
   AdminCreateExtraLessonRequestDto,
@@ -361,6 +362,23 @@ export class ExtraLessonsService {
         });
       } catch { /* 忽略 */ }
     }
+    // 通知申请人（首选家长/成人本人）：申请已通过，老师正在安排时段
+    try {
+      const recipientIds = await resolveStudentRecipientUserIds(
+        this.prisma,
+        request.studentId,
+      );
+      for (const userId of recipientIds) {
+        await this.notifications.notify({
+          userId,
+          type: NotificationType.EXTRA_LESSON_UPDATE,
+          title: '加课申请已通过',
+          body: `【${request.student.name}】的加课申请已通过，老师正在安排时段，排好后会通知你确认。`,
+          sourceType: NotificationSourceType.EXTRA_LESSON_SLOT,
+          sourceId: requestId,
+        });
+      }
+    } catch { /* 忽略 */ }
     return updated;
   }
 
@@ -390,23 +408,23 @@ export class ExtraLessonsService {
       data: { status: 'REJECTED', adminNote: reason.trim() },
     });
 
-    // 通知家长（首个关联家长）
-    const parentId = request.student.parentLinks[0]?.parent?.id;
-    if (parentId) {
-      try {
-        await this.prisma.notification.create({
-          data: {
-            userId: parentId,
-            type: 'EXTRA_LESSON_UPDATE',
-            title: '加课申请未通过',
-            body: `学员 ${request.student.name} 的加课申请未通过：${reason.trim()}`,
-            sourceType: 'EXTRA_LESSON_SLOT',
-            sourceId: requestId,
-            channels: ['IN_APP'],
-          },
+    // 通知申请人（首选家长优先，成人学员则为本人）
+    try {
+      const recipientIds = await resolveStudentRecipientUserIds(
+        this.prisma,
+        request.studentId,
+      );
+      for (const userId of recipientIds) {
+        await this.notifications.notify({
+          userId,
+          type: NotificationType.EXTRA_LESSON_UPDATE,
+          title: '加课申请未通过',
+          body: `【${request.student.name}】的加课申请未通过：${reason.trim()}`,
+          sourceType: NotificationSourceType.EXTRA_LESSON_SLOT,
+          sourceId: requestId,
         });
-      } catch { /* 忽略 */ }
-    }
+      }
+    } catch { /* 忽略 */ }
     return updated;
   }
 

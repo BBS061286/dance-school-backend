@@ -533,14 +533,24 @@ export class AttendanceService {
     return result;
   }
 
-  /** 驳回停课申请（管理端） */
+  /** 驳回停课申请（管理端），并通知申请老师 */
   async rejectCancelRequest(id: string, reviewerId: string, reviewNote?: string) {
     const req = await this.prisma.occurrenceCancelRequest.findUnique({
       where: { id },
+      include: {
+        instructor: { include: { user: { select: { id: true } } } },
+        occurrence: {
+          select: {
+            sessionNumber: true,
+            date: true,
+            classSession: { select: { course: { select: { title: true } } } },
+          },
+        },
+      },
     });
     if (!req) throw new NotFoundException('申请不存在');
     if (req.status !== 'PENDING') throw new ConflictException('该申请已处理');
-    return this.prisma.occurrenceCancelRequest.update({
+    const updated = await this.prisma.occurrenceCancelRequest.update({
       where: { id },
       data: {
         status: 'REJECTED',
@@ -549,6 +559,28 @@ export class AttendanceService {
         reviewNote,
       },
     });
+    // 通知申请老师（失败不影响驳回结果）
+    const teacherUserId = req.instructor?.user?.id;
+    if (teacherUserId) {
+      try {
+        const occ = req.occurrence;
+        const dateStr = occ?.date ? new Date(occ.date).toISOString().slice(0, 10) : '';
+        const which = occ
+          ? `《${occ.classSession.course.title}》第 ${occ.sessionNumber} 节（${dateStr}）`
+          : '停课申请';
+        await this.notifications.notify({
+          userId: teacherUserId,
+          type: NotificationType.NOTICE,
+          title: '停课申请未通过',
+          body: `您申请的${which}停课未通过${reviewNote?.trim() ? `，原因：${reviewNote.trim()}` : ''}。请按原计划上课。`,
+          sourceType: NotificationSourceType.SESSION_OCCURRENCE,
+          sourceId: req.occurrenceId,
+        });
+      } catch {
+        /* 忽略 */
+      }
+    }
+    return updated;
   }
 
   /**

@@ -66,8 +66,13 @@ export class SessionsService {
 
   /** GET /admin/schedule（ADMIN）：课表日历，按日期范围查课次 */
   async schedule(from: string, to: string, campusId?: string) {
+    const fromDate = new Date(from);
+    const toDate = new Date(to);
+    if (!from || !to || Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+      throw new BadRequestException('缺少 from/to 参数');
+    }
     const where: any = {
-      date: { gte: new Date(from), lte: new Date(to) },
+      date: { gte: fromDate, lte: toDate },
     };
     if (campusId) {
       where.classSession = { campusId };
