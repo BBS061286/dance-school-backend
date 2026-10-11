@@ -136,20 +136,4 @@ export class DemoService {
     return { message: `已为 ${updated} 门课程补充介绍`, updated };
   }
 
-  /** 临时：把已结束的班次/课次标为已完成（演示数据看起来专业） */
-  async completePastSessions() {
-    const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
-    // 班次：endTime 早于现在且还是 SCHEDULED → COMPLETED
-    const sess = await this.prisma.classSession.updateMany({
-      where: { status: 'SCHEDULED', endTime: { lt: now } },
-      data: { status: 'COMPLETED' },
-    });
-    // 课次：date 早于今天且还是 SCHEDULED → COMPLETED
-    const occ = await this.prisma.sessionOccurrence.updateMany({
-      where: { status: 'SCHEDULED', date: { lt: new Date(todayStr) } },
-      data: { status: 'COMPLETED' },
-    });
-    return { message: `已完成 ${sess.count} 个班次、${occ.count} 个课次`, sessions: sess.count, occurrences: occ.count };
-  }
 }
