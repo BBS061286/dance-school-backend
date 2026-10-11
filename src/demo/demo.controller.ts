@@ -21,34 +21,4 @@ export class DemoController {
   seedDescriptions() {
     return this.demo.seedDescriptions();
   }
-
-  /** 临时：教师端全套演示数据 */
-  @Roles(UserRole.ADMIN)
-  @Post('admin/demo/seed-teacher')
-  async seedTeacher() {
-    try {
-      return await this.demo.seedTeacherDemo();
-    } catch (e: any) {
-      return { ok: false, error: e?.message, stack: (e?.stack || '').split('\n').slice(0, 6) };
-    }
-  }
-
-  /** 临时：查生产库约束状态 */
-  @Roles(UserRole.ADMIN)
-  @Post('admin/demo/diag-constraints')
-  async diag() {
-    try {
-      const P: any = (this.demo as any).prisma;
-      const rows: any[] = await P.$queryRawUnsafe(
-        `SELECT conname FROM pg_constraint WHERE conrelid = '"MessageThread"'::regclass AND contype = 'u'`,
-      );
-      const cnt: any[] = await P.$queryRawUnsafe(`SELECT COUNT(*)::int AS n FROM "MessageThread"`);
-      const idx: any[] = await P.$queryRawUnsafe(
-        `SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'MessageThread'`,
-      );
-      return { constraints: rows, threadCount: cnt, indexes: idx };
-    } catch (e: any) {
-      return { ok: false, error: e?.message };
-    }
-  }
 }
