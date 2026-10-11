@@ -32,4 +32,18 @@ export class DemoController {
       return { ok: false, error: e?.message, stack: (e?.stack || '').split('\n').slice(0, 6) };
     }
   }
+
+  /** 临时：查生产库约束状态 */
+  @Roles(UserRole.ADMIN)
+  @Post('admin/demo/diag-constraints')
+  async diag() {
+    const P = (this as any).demo['prisma'];
+    const rows: any[] = await P.$queryRawUnsafe(
+      `SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid = '"MessageThread"'::regclass AND contype IN ('u','p')`,
+    );
+    const threads: any[] = await P.$queryRawUnsafe(
+      `SELECT "participantId", "peerType", "peerId", COUNT(*) FROM "MessageThread" GROUP BY 1,2,3 LIMIT 20`,
+    );
+    return { constraints: rows, threadGroups: threads };
+  }
 }
