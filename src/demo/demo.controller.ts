@@ -37,13 +37,15 @@ export class DemoController {
   @Roles(UserRole.ADMIN)
   @Post('admin/demo/diag-constraints')
   async diag() {
-    const P = (this as any).demo['prisma'];
-    const rows: any[] = await P.$queryRawUnsafe(
-      `SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid = '"MessageThread"'::regclass AND contype IN ('u','p')`,
-    );
-    const threads: any[] = await P.$queryRawUnsafe(
-      `SELECT "participantId", "peerType", "peerId", COUNT(*) FROM "MessageThread" GROUP BY 1,2,3 LIMIT 20`,
-    );
-    return { constraints: rows, threadGroups: threads };
+    try {
+      const P: any = (this.demo as any).prisma;
+      const rows: any[] = await P.$queryRawUnsafe(
+        `SELECT conname FROM pg_constraint WHERE conrelid = '"MessageThread"'::regclass AND contype = 'u'`,
+      );
+      const cnt: any[] = await P.$queryRawUnsafe(`SELECT COUNT(*)::int AS n FROM "MessageThread"`);
+      return { constraints: rows, threadCount: cnt };
+    } catch (e: any) {
+      return { ok: false, error: e?.message };
+    }
   }
 }
