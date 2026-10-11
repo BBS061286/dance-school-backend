@@ -88,7 +88,7 @@ export class TeacherService {
     return this.prisma.classSession.findMany({
       where: { instructorId: instructor.id },
       include: {
-        course: { select: { id: true, title: true, format: true } },
+        course: { select: { id: true, title: true, format: true, term: { select: { id: true, name: true, startDate: true, endDate: true } } } },
         campus: { select: { id: true, name: true } },
         enrollments: {
           where: { status: { in: ['CONFIRMED', 'PENDING_PAYMENT'] } },

@@ -135,4 +135,29 @@ export class DemoService {
     }
     return { message: `已为 ${updated} 门课程补充介绍`, updated };
   }
+
+  /** 临时：按开课日期给无学期的课程回填 termId */
+  async backfillCourseTerms() {
+    const terms = await this.prisma.term.findMany({ orderBy: { startDate: 'asc' } });
+    const courses = await this.prisma.course.findMany({
+      where: { termId: null },
+      select: { id: true, title: true, startDate: true },
+    });
+    let updated = 0;
+    const byTerm: Record<string, number> = {};
+    for (const c of courses) {
+      const sd = c.startDate.toISOString().slice(0, 10);
+      const term = terms.find(
+        (t) =>
+          t.startDate.toISOString().slice(0, 10) <= sd &&
+          sd <= t.endDate.toISOString().slice(0, 10),
+      );
+      if (term) {
+        await this.prisma.course.update({ where: { id: c.id }, data: { termId: term.id } });
+        updated++;
+        byTerm[term.name] = (byTerm[term.name] ?? 0) + 1;
+      }
+    }
+    return { message: `已为 ${updated} 门课程回填学期`, updated, byTerm, skipped: courses.length - updated };
+  }
 }
