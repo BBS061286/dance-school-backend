@@ -25,7 +25,11 @@ export class DemoController {
   /** 临时：教师端全套演示数据 */
   @Roles(UserRole.ADMIN)
   @Post('admin/demo/seed-teacher')
-  seedTeacher() {
-    return this.demo.seedTeacherDemo();
+  async seedTeacher() {
+    try {
+      return await this.demo.seedTeacherDemo();
+    } catch (e: any) {
+      return { ok: false, error: e?.message, stack: (e?.stack || '').split('\n').slice(0, 6) };
+    }
   }
 }
