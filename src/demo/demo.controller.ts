@@ -22,10 +22,4 @@ export class DemoController {
     return this.demo.seedDescriptions();
   }
 
-  /** 临时：给赵老师造今日课程演示（3 节：已结束/进行中/未开始） */
-  @Roles(UserRole.ADMIN)
-  @Post('admin/demo/seed-today-showcase')
-  seedTodayShowcase() {
-    return this.demo.seedTodayShowcase();
-  }
 }
