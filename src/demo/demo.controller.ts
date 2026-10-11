@@ -21,11 +21,4 @@ export class DemoController {
   seedDescriptions() {
     return this.demo.seedDescriptions();
   }
-
-  /** 临时：按开课日期给课程回填学期 */
-  @Roles(UserRole.ADMIN)
-  @Post('admin/demo/backfill-course-terms')
-  backfillCourseTerms() {
-    return this.demo.backfillCourseTerms();
-  }
 }
