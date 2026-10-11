@@ -43,7 +43,10 @@ export class DemoController {
         `SELECT conname FROM pg_constraint WHERE conrelid = '"MessageThread"'::regclass AND contype = 'u'`,
       );
       const cnt: any[] = await P.$queryRawUnsafe(`SELECT COUNT(*)::int AS n FROM "MessageThread"`);
-      return { constraints: rows, threadCount: cnt };
+      const ths: any[] = await P.$queryRawUnsafe(
+        `SELECT t.id, t."participantId", u.name AS pname, t."participantRole", t."peerType", t."peerId", pu.name AS peername FROM "MessageThread" t LEFT JOIN "User" u ON u.id = t."participantId" LEFT JOIN "User" pu ON pu.id = t."peerId"`,
+      );
+      return { constraints: rows, threadCount: cnt, threads: ths };
     } catch (e: any) {
       return { ok: false, error: e?.message };
     }
