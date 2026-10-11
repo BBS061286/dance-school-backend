@@ -21,4 +21,11 @@ export class DemoController {
   seedDescriptions() {
     return this.demo.seedDescriptions();
   }
+
+  /** 临时：把已结束的班次/课次标为已完成 */
+  @Roles(UserRole.ADMIN)
+  @Post('admin/demo/complete-past-sessions')
+  completePastSessions() {
+    return this.demo.completePastSessions();
+  }
 }
