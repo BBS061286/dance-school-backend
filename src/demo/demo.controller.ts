@@ -21,4 +21,11 @@ export class DemoController {
   seedDescriptions() {
     return this.demo.seedDescriptions();
   }
+
+  /** 临时：教师端全套演示数据 */
+  @Roles(UserRole.ADMIN)
+  @Post('admin/demo/seed-teacher')
+  seedTeacher() {
+    return this.demo.seedTeacherDemo();
+  }
 }
