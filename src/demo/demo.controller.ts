@@ -29,5 +29,3 @@ export class DemoController {
     return this.demo.seedTodayShowcase();
   }
 }
-
-}
