@@ -231,7 +231,7 @@ export class CoursesService {
           ? { campuses: { some: { campusId: query.campus } } }
           : {}),
         ...(query.instructor_id
-          ? { sessions: { some: { instructorId: query.instructor_id } } }
+          ? { classSessions: { some: { instructorId: query.instructor_id } } }
           : {}),
       },
       select: {
