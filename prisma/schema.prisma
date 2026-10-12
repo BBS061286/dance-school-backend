@@ -347,6 +347,8 @@ model Instructor {
   defaultGroupRateCents   Int?
   defaultPrivateRateCents Int?
   defaultMasterRateCents  Int?
+  // 私信功能开关（管理员控制）：关闭后老师不能与家长/学员互发私信（防私单绕过学校）
+  messagingEnabled Boolean @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

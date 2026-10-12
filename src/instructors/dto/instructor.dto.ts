@@ -56,6 +56,9 @@ export class UpdateInstructorDto {
   @IsOptional()
   @IsUUID('4', { message: 'default_campus_id 必须是合法的 UUID' })
   default_campus_id?: string;
+
+  @IsOptional()
+  messagingEnabled?: boolean;
 }
 
 /** 分配/重新分配教师：{ instructor_id }（§6.25） */
@@ -112,4 +115,7 @@ export class CreateInstructorDto {
   @IsOptional()
   @IsUUID('4', { message: 'default_campus_id 必须是合法的 UUID' })
   default_campus_id?: string;
+
+  @IsOptional()
+  messagingEnabled?: boolean;
 }

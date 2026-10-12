@@ -29,6 +29,31 @@ export class MessagingService {
     private readonly notifications: NotificationsService,
   ) {}
 
+  /**
+   * 私信开关（防私单）：老师没开通时，禁止老师主动发、老师回复（老师视角的报错）；
+   * 家长/学员给该老师发时用另一条报错。
+   */
+  private async requireTeacherMessagingEnabled(instructorUserId: string) {
+    const profile = await this.prisma.instructor.findUnique({
+      where: { userId: instructorUserId },
+      select: { messagingEnabled: true },
+    });
+    if (!profile) throw new NotFoundException('未找到教师档案');
+    if (!profile.messagingEnabled) {
+      throw new ForbiddenException('管理员未为你开通私信功能，请联系学校');
+    }
+  }
+
+  private async requireTargetTeacherMessagingEnabled(teacherUserId: string) {
+    const profile = await this.prisma.instructor.findUnique({
+      where: { userId: teacherUserId },
+      select: { messagingEnabled: true },
+    });
+    if (profile && !profile.messagingEnabled) {
+      throw new ForbiddenException('该老师暂未开通私信功能，请联系学校');
+    }
+  }
+
   /** 用户角色 → 私信参与方角色；管理员走管理端回复接口 */
   private participantRoleFor(role: UserRole): ParticipantRole {
     switch (role) {
@@ -96,6 +121,7 @@ export class MessagingService {
       const teachers = await this.messageableTeachers(user.id);
       const target = teachers.find((t) => t.userId === peerId);
       if (!target) throw new ForbiddenException('只能给自己孩子的任课老师发私信');
+      await this.requireTargetTeacherMessagingEnabled(peerId);
       notifyUserIds = [peerId];
       const sender = await this.prisma.user.findUnique({
         where: { id: user.id },
@@ -187,6 +213,7 @@ export class MessagingService {
                     instructor: {
                       select: {
                         userId: true,
+                        messagingEnabled: true,
                         user: { select: { id: true, name: true } },
                       },
                     },
@@ -201,6 +228,8 @@ export class MessagingService {
     const map = new Map<string, { userId: string; name: string }>();
     for (const e of enrollments) {
       for (const ci of e.classSession?.course?.instructors ?? []) {
+        // 没开通私信功能的老师不出现在可选列表
+        if (ci.instructor?.messagingEnabled === false) continue;
         const u = ci.instructor?.user;
         if (u && !map.has(u.id)) {
           map.set(u.id, { userId: u.id, name: u.name ?? '老师' });
@@ -335,6 +364,7 @@ export class MessagingService {
 
   /** POST /me/instructor/message-threads/:id/reply：老师回复家长/学员 */
   async instructorReply(instructor: RequestUser, threadId: string, body: string) {
+    await this.requireTeacherMessagingEnabled(instructor.id);
     const thread = await this.prisma.messageThread.findFirst({
       where: { id: threadId, peerType: 'INSTRUCTOR', peerId: instructor.id },
     });
@@ -391,6 +421,7 @@ export class MessagingService {
    * 找到已有则返回，没有则创建；并给家长发一条通知。通知失败不影响发起。
    */
   async instructorInitiate(instructor: RequestUser, parentId: string) {
+    await this.requireTeacherMessagingEnabled(instructor.id);
     const profile = await this.prisma.instructor.findUnique({
       where: { userId: instructor.id },
     });
@@ -450,6 +481,7 @@ export class MessagingService {
    * 校验：classSessionId 必须是该老师任教的班级；body 非空。
    */
   async instructorBroadcast(instructor: RequestUser, classSessionId: string, body: string) {
+    await this.requireTeacherMessagingEnabled(instructor.id);
     const profile = await this.prisma.instructor.findUnique({
       where: { userId: instructor.id },
     });

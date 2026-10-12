@@ -60,6 +60,7 @@ export class InstructorsService {
           bio: dto.bio,
           specialties: dto.specialties ?? [],
           defaultCampusId: dto.default_campus_id,
+          ...(dto.messagingEnabled !== undefined ? { messagingEnabled: dto.messagingEnabled } : {}),
         },
         include: {
           user: { select: { id: true, name: true, email: true } },
@@ -429,6 +430,9 @@ export class InstructorsService {
           : {}),
         ...(dto.defaultMasterRateCents !== undefined
           ? { defaultMasterRateCents: dto.defaultMasterRateCents }
+          : {}),
+        ...(dto.messagingEnabled !== undefined
+          ? { messagingEnabled: dto.messagingEnabled }
           : {}),
       },
       include: {
