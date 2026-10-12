@@ -54,15 +54,4 @@ export class CoursesController {
   create(@Body() dto: CreateCourseDto) {
     return this.courses.create(dto);
   }
-
-  /** 临时：修复演示数据（用完即删） */
-  @Roles(UserRole.ADMIN)
-  @Post('admin/_fix-demo-sessions')
-  async fixDemoSessions() {
-    // 1. 超员班次：名额 12 -> 18
-    await this.courses.fixSessionCapacity('0c8148bb-f9ea-4356-a8d5-68ec056c9730', 18);
-    // 2. 少儿中国舞班次：UTC 时间 +4h（10:00 UTC -> 14:00 UTC = 10:00 EDT）
-    const shifted = await this.courses.shiftCourseSessions('66d667f8-0b7f-4080-bd59-698b792f14f3', 4);
-    return { capacityFixed: true, sessionsShifted: shifted };
-  }
 }

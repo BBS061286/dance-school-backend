@@ -382,34 +382,6 @@ export class CoursesService {
       select: { id: true, status: true },
     });
   }
-
-  /** 临时：修改班次名额（演示数据修复用） */
-  async fixSessionCapacity(sessionId: string, capacity: number) {
-    return this.prisma.classSession.update({
-      where: { id: sessionId },
-      data: { capacity },
-      select: { id: true, capacity: true },
-    });
-  }
-
-  /** 临时：整体平移某课程全部班次时间（演示数据修复用），返回平移的班次数 */
-  async shiftCourseSessions(courseId: string, hours: number) {
-    const sessions = await this.prisma.classSession.findMany({
-      where: { courseId },
-      select: { id: true, startTime: true, endTime: true },
-    });
-    for (const s of sessions) {
-      await this.prisma.classSession.update({
-        where: { id: s.id },
-        data: {
-          startTime: new Date(s.startTime.getTime() + hours * 3600_000),
-          endTime: new Date(s.endTime.getTime() + hours * 3600_000),
-        },
-      });
-    }
-    return sessions.length;
-  }
-
   /**
    * 管理端课程详情：GET /admin/courses/:id/detail（ADMIN）。
    * 返回基本信息 + 学期（含起止日期）+ 全部班次（日期/时间/地点/老师/报名/名额）
