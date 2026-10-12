@@ -8,9 +8,11 @@ import {
   Patch,
   Post,
   Query,
+  Request,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
+import { RequestUser } from '../common/types';
 import { LocalFileInterceptor, UploadedLocalFile } from '../common/local-upload';
 import { UserRole } from '@prisma/client';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -44,6 +46,13 @@ export class InstructorsController {
   @Get('admin/instructors')
   list() {
     return this.instructors.list();
+  }
+
+  /** 学员端老师资料卡（脱敏）：GET /me/teachers/:id */
+  @Roles(UserRole.PARENT, UserRole.ADULT_STUDENT)
+  @Get('me/teachers/:id')
+  teacherCard(@Request() req: { user: RequestUser }, @Param('id') id: string) {
+    return this.instructors.teacherCard(req.user, id);
   }
 
   /** 教师详情：GET /admin/instructors/:id */

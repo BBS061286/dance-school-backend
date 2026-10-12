@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -9,6 +10,7 @@ import { randomBytes } from 'crypto';
 import {
   NotificationSourceType,
   NotificationType,
+  Relationship,
   UserRole,
 } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -517,5 +519,68 @@ export class InstructorsService {
       specialties: i.specialties,
       campusName: i.defaultCampus?.name ?? null,
     }));
+  }
+
+  /**
+   * 学员端老师资料卡（脱敏）：GET /me/teachers/:id（PARENT / ADULT_STUDENT）。
+   * 只返回姓名/照片/简介/擅长/任教班级，不含邮箱电话。
+   * 权限：只能查看自己（孩子）已报名课程的老师。
+   */
+  async teacherCard(user: { id: string; role: UserRole }, instructorId: string) {
+    const instructor = await this.prisma.instructor.findUnique({
+      where: { id: instructorId },
+      select: {
+        id: true,
+        bio: true,
+        specialties: true,
+        user: { select: { name: true, avatarUrl: true, isActive: true } },
+        classSessions: {
+          where: { status: { not: 'CANCELLED' } },
+          select: {
+            course: { select: { title: true } },
+            campus: { select: { name: true } },
+          },
+          take: 30,
+        },
+      },
+    });
+    if (!instructor || !instructor.user.isActive) throw new NotFoundException('老师不存在');
+
+    // 权限：该老师须任教用户关联学员已报名的课程（班次老师或课程关联老师）
+    const links = await this.prisma.parentStudentLink.findMany({
+      where: {
+        parentId: user.id,
+        ...(user.role === UserRole.ADULT_STUDENT ? { relationship: Relationship.SELF } : {}),
+      },
+      select: { studentId: true },
+    });
+    const studentIds = links.map((l) => l.studentId);
+    let allowed = false;
+    if (studentIds.length > 0) {
+      const hit = await this.prisma.enrollment.count({
+        where: {
+          studentId: { in: studentIds },
+          status: { in: ['CONFIRMED', 'PENDING_PAYMENT'] },
+          OR: [
+            { classSession: { instructorId } },
+            { classSession: { course: { instructors: { some: { instructorId } } } } },
+          ],
+        },
+      });
+      allowed = hit > 0;
+    }
+    if (!allowed) throw new ForbiddenException('只能查看自己课程老师的资料');
+
+    return {
+      id: instructor.id,
+      name: instructor.user.name,
+      avatarUrl: instructor.user.avatarUrl,
+      bio: instructor.bio,
+      specialties: instructor.specialties,
+      classes: instructor.classSessions.map((s) => ({
+        courseTitle: s.course.title,
+        campusName: s.campus.name,
+      })),
+    };
   }
 }
