@@ -8,6 +8,7 @@ import {
   AttendanceStatus,
   CheckInMethod,
   NotificationType,
+  Relationship,
   UserRole,
 } from '@prisma/client';
 import { RequestUser } from '../common/types';
@@ -139,6 +140,55 @@ export class TeacherService {
           const entry = map.get(p.id) ?? { id: p.id, name: p.name, students: [] as string[] };
           if (!entry.students.includes(e.student.name)) entry.students.push(e.student.name);
           map.set(p.id, entry);
+        }
+      }
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
+  }
+
+  /** GET /me/instructor/message-targets：新私信可选对象——学员家长 + 成人学员本人（去重，附学员名） */
+  async messageTargets(userId: string) {
+    const instructor = await this.requireInstructor(userId);
+    const sessions = await this.prisma.classSession.findMany({
+      where: { instructorId: instructor.id },
+      include: {
+        enrollments: {
+          where: { status: { in: ['CONFIRMED', 'PENDING_PAYMENT'] } },
+          include: {
+            student: {
+              select: {
+                id: true,
+                name: true,
+                parentLinks: {
+                  select: {
+                    relationship: true,
+                    parent: {
+                      select: { id: true, name: true, role: true, isActive: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    type Target = { id: string; name: string; kind: 'PARENT' | 'ADULT'; students: string[] };
+    const map = new Map<string, Target>();
+    for (const s of sessions) {
+      for (const e of s.enrollments) {
+        for (const link of e.student.parentLinks) {
+          const p = link.parent;
+          if (!p.isActive) continue;
+          if (link.relationship === Relationship.SELF && p.role === UserRole.ADULT_STUDENT) {
+            const entry = map.get(p.id) ?? { id: p.id, name: p.name, kind: 'ADULT' as const, students: [] as string[] };
+            if (!entry.students.includes(e.student.name)) entry.students.push(e.student.name);
+            map.set(p.id, entry);
+          } else if (p.role === UserRole.PARENT) {
+            const entry = map.get(p.id) ?? { id: p.id, name: p.name, kind: 'PARENT' as const, students: [] as string[] };
+            if (!entry.students.includes(e.student.name)) entry.students.push(e.student.name);
+            map.set(p.id, entry);
+          }
         }
       }
     }

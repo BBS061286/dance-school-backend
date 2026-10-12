@@ -48,6 +48,17 @@ export class InstructorInitiateDto {
   parentId: string;
 }
 
+/** 教师端给全班群发私信：{ classSessionId, body } */
+export class InstructorBroadcastDto {
+  @IsString({ message: 'classSessionId 必须是字符串' })
+  @IsNotEmpty({ message: 'classSessionId 不能为空' })
+  classSessionId: string;
+
+  @IsString({ message: 'body 必须是字符串' })
+  @IsNotEmpty({ message: '消息内容不能为空' })
+  body: string;
+}
+
 /** 新建快捷回复模板：{ title, body } */
 export class CreateTemplateDto {
   @IsString({ message: 'title 必须是字符串' })

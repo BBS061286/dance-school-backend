@@ -15,6 +15,7 @@ import { RequestUser } from '../common/types';
 import {
   CreateTemplateDto,
   InitiateMessageDto,
+  InstructorBroadcastDto,
   InstructorInitiateDto,
   ReplyMessageDto,
   SendMessageDto,
@@ -132,6 +133,16 @@ export class MessagingController {
     @Body() dto: InstructorInitiateDto,
   ) {
     return this.messaging.instructorInitiate(req.user, dto.parentId);
+  }
+
+  /** 教师端给全班群发私信：POST /me/instructor/messages/broadcast（INSTRUCTOR） */
+  @Roles(UserRole.INSTRUCTOR)
+  @Post('me/instructor/messages/broadcast')
+  instructorBroadcast(
+    @Request() req: { user: RequestUser },
+    @Body() dto: InstructorBroadcastDto,
+  ) {
+    return this.messaging.instructorBroadcast(req.user, dto.classSessionId, dto.body);
   }
 
   /** 管理端收件箱：GET /admin/messages/threads?role=&search=（ADMIN） */

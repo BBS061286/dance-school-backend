@@ -401,8 +401,8 @@ export class MessagingService {
       select: { id: true, role: true, isActive: true },
     });
     if (!target || !target.isActive) throw new NotFoundException('目标用户不存在或已停用');
-    if (target.role !== UserRole.PARENT) {
-      throw new BadRequestException('只能给家长发起私信');
+    if (target.role !== UserRole.PARENT && target.role !== UserRole.ADULT_STUDENT) {
+      throw new BadRequestException('只能给家长或成人学员发起私信');
     }
 
     const allowed = await this.prisma.parentStudentLink.count({
@@ -414,12 +414,12 @@ export class MessagingService {
       },
     });
     if (allowed === 0) {
-      throw new ForbiddenException('只能给自己所教学员的家长发起私信');
+      throw new ForbiddenException('只能给自己所教学员的家长或成人学员发起私信');
     }
 
     const thread = await this.findOrCreateThread(
       parentId,
-      ParticipantRole.PARENT,
+      this.participantRoleFor(target.role),
       'INSTRUCTOR',
       instructor.id,
     );
@@ -442,6 +442,112 @@ export class MessagingService {
       // 通知失败不影响发起
     }
     return { thread };
+  }
+
+  /**
+   * POST /me/instructor/messages/broadcast：老师给整个班级群发私信。
+   * 给该班每位学员的家长（成人学员则为本人）各发一条 1v1 私信（复用各自与老师的会话），并推送通知。
+   * 校验：classSessionId 必须是该老师任教的班级；body 非空。
+   */
+  async instructorBroadcast(instructor: RequestUser, classSessionId: string, body: string) {
+    const profile = await this.prisma.instructor.findUnique({
+      where: { userId: instructor.id },
+    });
+    if (!profile) throw new NotFoundException('未找到教师档案');
+    const text = (body ?? '').trim();
+    if (!text) throw new BadRequestException('消息内容不能为空');
+
+    const session = await this.prisma.classSession.findFirst({
+      where: { id: classSessionId, instructorId: profile.id },
+      include: {
+        course: { select: { title: true } },
+        campus: { select: { name: true } },
+        enrollments: {
+          where: { status: { in: ['CONFIRMED', 'PENDING_PAYMENT'] } },
+          include: {
+            student: {
+              select: {
+                name: true,
+                parentLinks: {
+                  select: {
+                    relationship: true,
+                    parent: { select: { id: true, name: true, role: true, isActive: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!session) throw new ForbiddenException('只能给自己任教的班级群发私信');
+
+    // 目标：少儿学员的家长 + 成人学员本人（按用户去重）
+    const targets = new Map<string, { id: string; role: UserRole; name: string }>();
+    for (const e of session.enrollments) {
+      for (const link of e.student.parentLinks) {
+        const p = link.parent;
+        if (!p.isActive) continue;
+        if (link.relationship === Relationship.SELF && p.role === UserRole.ADULT_STUDENT) {
+          targets.set(p.id, { id: p.id, role: p.role, name: p.name });
+        } else if (p.role === UserRole.PARENT) {
+          targets.set(p.id, { id: p.id, role: p.role, name: p.name });
+        }
+      }
+    }
+    if (targets.size === 0) throw new BadRequestException('该班级暂无可联系的家长或学员');
+
+    const teacher = await this.prisma.user.findUnique({
+      where: { id: instructor.id },
+      select: { name: true },
+    });
+    const teacherName = teacher?.name ?? '老师';
+    let sent = 0;
+    const failed: string[] = [];
+    for (const t of targets.values()) {
+      try {
+        const thread = await this.findOrCreateThread(
+          t.id,
+          this.participantRoleFor(t.role),
+          'INSTRUCTOR',
+          instructor.id,
+        );
+        const message = await this.prisma.message.create({
+          data: {
+            threadId: thread.id,
+            senderId: instructor.id,
+            senderRole: SenderRole.INSTRUCTOR,
+            body: text,
+          },
+        });
+        await this.prisma.messageThread.update({
+          where: { id: thread.id },
+          data: { lastMessageAt: message.createdAt },
+        });
+        try {
+          await this.notifications.notify({
+            userId: t.id,
+            type: NotificationType.MESSAGE_RECEIVED,
+            title: `${teacherName}给${session.course.title}群发了私信`,
+            body: text.length > 80 ? `${text.slice(0, 80)}…` : text,
+            sourceType: NotificationSourceType.MESSAGE,
+            sourceId: message.id,
+          });
+        } catch {
+          // 通知失败不影响发送
+        }
+        sent += 1;
+      } catch {
+        failed.push(t.name);
+      }
+    }
+    return {
+      sent,
+      total: targets.size,
+      failed,
+      courseTitle: session.course.title,
+      campusName: session.campus.name,
+    };
   }
 
   // ------------------- 管理端（保持兼容，多会话） -------------------

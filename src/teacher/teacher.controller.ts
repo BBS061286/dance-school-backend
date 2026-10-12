@@ -61,6 +61,12 @@ export class TeacherController {
   }
 
   @Roles(UserRole.INSTRUCTOR)
+  @Get('me/instructor/message-targets')
+  messageTargets(@Request() req: { user: RequestUser }) {
+    return this.teacher.messageTargets(req.user.id);
+  }
+
+  @Roles(UserRole.INSTRUCTOR)
   @Get('me/instructor/substitutes')
   substitutes(@Request() req: { user: RequestUser }) {
     return this.teacher.substitutes(req.user.id);
