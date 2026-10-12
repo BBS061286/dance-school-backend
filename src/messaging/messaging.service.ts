@@ -480,7 +480,12 @@ export class MessagingService {
    * 给该班每位学员的家长（成人学员则为本人）各发一条 1v1 私信（复用各自与老师的会话），并推送通知。
    * 校验：classSessionId 必须是该老师任教的班级；body 非空。
    */
-  async instructorBroadcast(instructor: RequestUser, classSessionId: string, body: string) {
+  async instructorBroadcast(
+    instructor: RequestUser,
+    classSessionId: string,
+    body: string,
+    studentIds?: string[],
+  ) {
     await this.requireTeacherMessagingEnabled(instructor.id);
     const profile = await this.prisma.instructor.findUnique({
       where: { userId: instructor.id },
@@ -499,6 +504,7 @@ export class MessagingService {
           include: {
             student: {
               select: {
+                id: true,
                 name: true,
                 parentLinks: {
                   select: {
@@ -514,9 +520,11 @@ export class MessagingService {
     });
     if (!session) throw new ForbiddenException('只能给自己任教的班级群发私信');
 
-    // 目标：少儿学员的家长 + 成人学员本人（按用户去重）
+    // 目标：少儿学员的家长 + 成人学员本人（按用户去重）；传入 studentIds 时只发给这些学员
+    const onlyIds = Array.isArray(studentIds) && studentIds.length > 0 ? new Set(studentIds) : null;
     const targets = new Map<string, { id: string; role: UserRole; name: string }>();
     for (const e of session.enrollments) {
+      if (onlyIds && !onlyIds.has(e.student.id)) continue;
       for (const link of e.student.parentLinks) {
         const p = link.parent;
         if (!p.isActive) continue;

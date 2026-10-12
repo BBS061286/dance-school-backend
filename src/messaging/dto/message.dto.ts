@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsArray, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 
 /** 发送私信请求体（§6.22/6.23）：{ body, peerType?, peerId? }
  * peerType=ADMIN（默认，给管理员）| INSTRUCTOR（给老师，需 peerId=老师 userId） */
@@ -48,7 +48,7 @@ export class InstructorInitiateDto {
   parentId: string;
 }
 
-/** 教师端给全班群发私信：{ classSessionId, body } */
+/** 教师端给全班群发私信：{ classSessionId, body, studentIds? }（studentIds 传入时只发给这些学员的家长/本人） */
 export class InstructorBroadcastDto {
   @IsString({ message: 'classSessionId 必须是字符串' })
   @IsNotEmpty({ message: 'classSessionId 不能为空' })
@@ -57,6 +57,11 @@ export class InstructorBroadcastDto {
   @IsString({ message: 'body 必须是字符串' })
   @IsNotEmpty({ message: '消息内容不能为空' })
   body: string;
+
+  @IsOptional()
+  @IsArray({ message: 'studentIds 必须是数组' })
+  @IsString({ each: true, message: 'studentIds 元素必须是字符串' })
+  studentIds?: string[];
 }
 
 /** 新建快捷回复模板：{ title, body } */

@@ -195,6 +195,55 @@ export class TeacherService {
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
   }
 
+  /**
+   * GET /me/instructor/roster/:sessionId：某班级学员名单（含每位学员的接收人：家长 / 成人学员本人），
+   * 供老师"按学员发送"私信时勾选。校验班级归属。
+   */
+  async classRoster(userId: string, sessionId: string) {
+    const instructor = await this.requireInstructor(userId);
+    const session = await this.prisma.classSession.findFirst({
+      where: { id: sessionId, instructorId: instructor.id },
+      include: {
+        enrollments: {
+          where: { status: { in: ['CONFIRMED', 'PENDING_PAYMENT'] } },
+          include: {
+            student: {
+              select: {
+                id: true,
+                name: true,
+                parentLinks: {
+                  select: {
+                    relationship: true,
+                    parent: { select: { id: true, name: true, role: true, isActive: true } },
+                  },
+                },
+              },
+            },
+          },
+          orderBy: { enrolledAt: 'asc' },
+        },
+      },
+    });
+    if (!session) throw new NotFoundException('班级不存在或不是你任教的班级');
+    return session.enrollments.map((e) => {
+      const recipients = new Map<string, { id: string; name: string; kind: 'PARENT' | 'ADULT' }>();
+      for (const link of e.student.parentLinks) {
+        const p = link.parent;
+        if (!p.isActive) continue;
+        if (link.relationship === Relationship.SELF && p.role === UserRole.ADULT_STUDENT) {
+          recipients.set(p.id, { id: p.id, name: p.name, kind: 'ADULT' });
+        } else if (p.role === UserRole.PARENT) {
+          recipients.set(p.id, { id: p.id, name: p.name, kind: 'PARENT' });
+        }
+      }
+      return {
+        studentId: e.student.id,
+        studentName: e.student.name,
+        recipients: [...recipients.values()],
+      };
+    });
+  }
+
   /** GET /me/instructor/substitutes：我代课的课次 */
   async substitutes(userId: string) {
     const instructor = await this.requireInstructor(userId);

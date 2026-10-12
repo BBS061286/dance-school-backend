@@ -67,6 +67,12 @@ export class TeacherController {
   }
 
   @Roles(UserRole.INSTRUCTOR)
+  @Get('me/instructor/roster/:sessionId')
+  classRoster(@Request() req: { user: RequestUser }, @Param('sessionId') sessionId: string) {
+    return this.teacher.classRoster(req.user.id, sessionId);
+  }
+
+  @Roles(UserRole.INSTRUCTOR)
   @Get('me/instructor/substitutes')
   substitutes(@Request() req: { user: RequestUser }) {
     return this.teacher.substitutes(req.user.id);

@@ -142,7 +142,7 @@ export class MessagingController {
     @Request() req: { user: RequestUser },
     @Body() dto: InstructorBroadcastDto,
   ) {
-    return this.messaging.instructorBroadcast(req.user, dto.classSessionId, dto.body);
+    return this.messaging.instructorBroadcast(req.user, dto.classSessionId, dto.body, dto.studentIds);
   }
 
   /** 管理端收件箱：GET /admin/messages/threads?role=&search=（ADMIN） */
