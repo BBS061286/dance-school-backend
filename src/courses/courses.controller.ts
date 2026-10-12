@@ -54,4 +54,15 @@ export class CoursesController {
   create(@Body() dto: CreateCourseDto) {
     return this.courses.create(dto);
   }
+
+  /** 临时：修复演示数据（用完即删） */
+  @Roles(UserRole.ADMIN)
+  @Post('admin/_fix-demo-data2')
+  async fixDemoData2() {
+    // 1. 百老汇大师课：totalSessions 1 -> 2（实际有2个课次）
+    await this.courses.fixTotalSessions('b75e6907-b162-4dfc-9373-17c267d89b84', 2);
+    // 2. 少儿中国舞：删除9个空班次，保留有2个报名的 fa7b6ccc，并移到未来周六、状态改 SCHEDULED
+    const deleted = await this.courses.dedupeSessions('66d667f8-0b7f-4080-bd59-698b792f14f3', 'fa7b6ccc-6185-4718-b7de-64f330f1409a');
+    return { totalSessionsFixed: true, sessionsDeleted: deleted };
+  }
 }

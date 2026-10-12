@@ -382,6 +382,38 @@ export class CoursesService {
       select: { id: true, status: true },
     });
   }
+
+  /** 临时：修正课程总节数（演示数据修复用） */
+  async fixTotalSessions(courseId: string, total: number) {
+    return this.prisma.course.update({
+      where: { id: courseId },
+      data: { totalSessions: total },
+      select: { id: true, totalSessions: true },
+    });
+  }
+
+  /** 临时：删除某课程除 keepId 外的所有班次，并把 keepId 移到未来、改 SCHEDULED */
+  async dedupeSessions(courseId: string, keepId: string) {
+    const sessions = await this.prisma.classSession.findMany({
+      where: { courseId, id: { not: keepId } },
+      select: { id: true },
+    });
+    for (const s of sessions) {
+      // 先删关联的课次，再删班次
+      await this.prisma.sessionOccurrence.deleteMany({ where: { classSessionId: s.id } });
+      await this.prisma.classSession.delete({ where: { id: s.id } });
+    }
+    // keep 的班次移到下周六 10:00 EDT（14:00 UTC），状态 SCHEDULED
+    await this.prisma.classSession.update({
+      where: { id: keepId },
+      data: {
+        startTime: new Date('2026-10-17T14:00:00Z'),
+        endTime: new Date('2026-10-17T15:00:00Z'),
+        status: 'SCHEDULED',
+      },
+    });
+    return sessions.length;
+  }
   /**
    * 管理端课程详情：GET /admin/courses/:id/detail（ADMIN）。
    * 返回基本信息 + 学期（含起止日期）+ 全部班次（日期/时间/地点/老师/报名/名额）
