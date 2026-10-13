@@ -184,6 +184,102 @@ export class ReportsService {
       instructorHours.sort((a, b) => b.hours - a.hours);
     }
 
+    // ---- 按班级（ClassSession）收入明细 ----
+    // 一个订单的实收按明细金额比例分摊到各报名对应的班级
+    const byClass = new Map<
+      string,
+      {
+        classSessionId: string;
+        courseName: string;
+        sessionLabel: string;
+        termId: string;
+        termName: string;
+        collectedCents: number;
+        enrollments: number;
+      }
+    >();
+    const classBucket = (
+      sessionId: string,
+      courseName: string,
+      sessionLabel: string,
+      termId: string,
+      termName: string,
+    ) => {
+      if (!byClass.has(sessionId))
+        byClass.set(sessionId, {
+          classSessionId: sessionId,
+          courseName,
+          sessionLabel,
+          termId,
+          termName,
+          collectedCents: 0,
+          enrollments: 0,
+        });
+      return byClass.get(sessionId)!;
+    };
+
+    // 需要班级名称信息：重新查带 course/session 详情的订单明细
+    const ordersWithDetail = await this.prisma.order.findMany({
+      where: { status: { notIn: ['FAILED', 'CANCELLED'] } },
+      select: {
+        payments: { where: { status: 'SUCCEEDED' }, select: { amountCents: true } },
+        items: {
+          select: {
+            amountCents: true,
+            enrollment: {
+              select: {
+                classSession: {
+                  select: {
+                    id: true,
+                    startTime: true,
+                    course: { select: { title: true, term: { select: { id: true, name: true } } } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    for (const o of ordersWithDetail) {
+      const paid = o.payments.reduce((s, p) => s + p.amountCents, 0);
+      if (paid <= 0) continue;
+      const itemsTotal = o.items.reduce((s, it) => s + (it.amountCents ?? 0), 0);
+      for (const it of o.items) {
+        const cs = it.enrollment?.classSession;
+        if (!cs) continue;
+        // 按明细金额比例分摊实收
+        const share = itemsTotal > 0 ? Math.round((paid * (it.amountCents ?? 0)) / itemsTotal) : 0;
+        const t = cs.course?.term;
+        const d = new Date(cs.startTime);
+        const label = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        const b = classBucket(cs.id, cs.course?.title ?? '未知课程', label, t?.id ?? 'no-term', t?.name ?? '未分学期');
+        b.collectedCents += share;
+      }
+    }
+    // 每个班级的报名数
+    const sessionEnrollCounts = await this.prisma.enrollment.groupBy({
+      by: ['classSessionId'],
+      where: { status: { notIn: ['CANCELLED', 'WAITLISTED'] } },
+      _count: { id: true },
+    });
+    for (const g of sessionEnrollCounts) {
+      const b = byClass.get(g.classSessionId);
+      if (b) b.enrollments = g._count.id;
+    }
+    // 按学期分组
+    const byTermClass: Record<string, { termId: string; termName: string; classes: typeof byClass extends Map<string, infer V> ? V[] : never; termTotalCents: number }> = {};
+    for (const c of byClass.values()) {
+      if (!byTermClass[c.termId]) {
+        byTermClass[c.termId] = { termId: c.termId, termName: c.termName, classes: [], termTotalCents: 0 };
+      }
+      byTermClass[c.termId].classes.push(c);
+      byTermClass[c.termId].termTotalCents += c.collectedCents;
+    }
+    for (const t of Object.values(byTermClass)) {
+      t.classes.sort((a, b) => b.collectedCents - a.collectedCents);
+    }
+
     return {
       revenue: {
         totalCollectedCents,
@@ -192,6 +288,7 @@ export class ReportsService {
       },
       enrollments: { total: totalEnrollments, waitlisted: totalWaitlisted },
       byTerm: [...byTerm.values()].sort((a, b) => b.collectedCents - a.collectedCents),
+      byTermClass: Object.values(byTermClass).sort((a, b) => b.termTotalCents - a.termTotalCents),
       currentTerm: currentTerm ? { id: currentTerm.id, name: currentTerm.name } : null,
       instructorHours,
       generatedAt: new Date().toISOString(),
