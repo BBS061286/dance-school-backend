@@ -29,7 +29,7 @@ export class CreateCourseDto {
 
   /** 新建时的状态：DRAFT（默认）/ PUBLISHED；不传则为草稿 */
   @IsOptional()
-  @IsEnum(CourseStatus, { message: 'status 必须是 DRAFT/PUBLISHED/ARCHIVED' })
+  @IsEnum(CourseStatus, { message: 'status 必须是 DRAFT/PUBLISHED/ARCHIVED/COMPLETED' })
   status?: CourseStatus;
 
   @IsString({ message: 'title 必须是字符串' })

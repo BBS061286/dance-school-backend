@@ -30,6 +30,7 @@ import { DemoModule } from './demo/demo.module';
 import { TeacherModule } from './teacher/teacher.module';
 import { UsersModule } from './users/users.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     TermsModule, // 学期管理
     SessionsModule, // 班次管理：新建班次
     StaffModule, // 员工（管理员账号）管理
+    ReportsModule, // 经营报表：只读聚合
   ],
   providers: [
     // 全局守卫：先鉴权（@Public 标记的路由放行），再做角色校验

@@ -18,7 +18,7 @@ export class AdminCoursesQuery {
   @IsString()
   instructor_id?: string;
 
-  /** 状态：DRAFT / PUBLISHED / ARCHIVED */
+  /** 状态：DRAFT / PUBLISHED / ARCHIVED / COMPLETED */
   @IsOptional()
   @IsEnum(CourseStatus)
   status?: CourseStatus;

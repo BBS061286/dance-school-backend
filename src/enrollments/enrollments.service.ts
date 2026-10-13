@@ -70,6 +70,10 @@ export class EnrollmentsService {
       if (session.status !== 'SCHEDULED') {
         throw new ConflictException('班级不可报名');
       }
+      // 已完课的课程不可报名（家长端只能在历史中查看）
+      if (session.course.status === 'COMPLETED') {
+        throw new ConflictException('该课程已完课，不可报名');
+      }
 
       // 归属校验：管理员可代报，其余只能为自己关联的学生报名
       if (requester.role !== 'ADMIN') {

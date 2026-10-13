@@ -368,7 +368,7 @@ export class CoursesService {
 
   /**
    * 课程状态变更：PATCH /admin/courses/:id/status（ADMIN）。
-   * 草稿↔发布↔归档，用于新建后的发布、学期结束归档等。
+   * 草稿↔发布↔归档/完课，用于新建后的发布、学期结束归档、课程上完标记已完课等。
    */
   async updateStatus(id: string, status: CourseStatus) {
     const course = await this.prisma.course.findUnique({
