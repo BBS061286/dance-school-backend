@@ -12,6 +12,7 @@ import { SessionsModule } from './sessions/sessions.module';
 import { StaffModule } from './staff/staff.module';
 import { CoursesModule } from './courses/courses.module';
 import { DocumentsModule } from './documents/documents.module';
+import { SettingsModule } from './settings/settings.module';
 import { EnrollmentsModule } from './enrollments/enrollments.module';
 import { EventsModule } from './events/events.module';
 import { ExtraLessonsModule } from './extra-lessons/extra-lessons.module';
@@ -53,6 +54,7 @@ import { ReportsModule } from './reports/reports.module';
     TeacherModule, // D5：教师端
     MessagingModule, // D5：私信
     DocumentsModule, // D5：文件签署
+    SettingsModule, // 系统设置（收款二维码）
     StudentsModule, // D5：学员查询
     DemoModule,
     CoursesModule, // D5：课程创建
