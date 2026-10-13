@@ -428,7 +428,9 @@ model Campus {
 model Course {
   id          String         @id @default(uuid())
   title       String
+  titleEn     String?
   description String?
+  descriptionEn String?
   format      CourseFormat
   audience    CourseAudience
   // audience = ALL 时可选填的成人端年龄区间；为空时成人端回退使用 minAge/maxAge（v2 R3）
@@ -593,7 +595,9 @@ model Notice {
 model Event {
   id                  String        @id @default(uuid())
   title               String
+  titleEn             String?
   description         String?
+  descriptionEn       String?
   campusId            String?
   campus              Campus?       @relation(fields: [campusId], references: [id])
   // v2 R7：IANA 时区名；仅 campusId 为空（线上活动）时使用，默认 America/New_York

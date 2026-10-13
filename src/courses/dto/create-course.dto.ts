@@ -36,8 +36,16 @@ export class CreateCourseDto {
   title: string;
 
   @IsOptional()
+  @IsString()
+  titleEn?: string;
+
+  @IsOptional()
   @IsString({ message: 'description 必须是字符串' })
   description?: string;
+
+  @IsOptional()
+  @IsString()
+  descriptionEn?: string;
 
   @IsOptional()
   @IsEnum(SkillLevel)

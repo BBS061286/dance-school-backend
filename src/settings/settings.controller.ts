@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Delete,
+  Body,
   Param,
   UploadedFile,
   UseInterceptors,
@@ -10,10 +11,21 @@ import {
 import { Roles } from '../auth/decorators/roles.decorator';
 import { LocalFileInterceptor } from '../common/local-upload';
 import { SettingsService } from './settings.service';
+import { TranslateService } from './translate.service';
 
 @Controller()
 export class SettingsController {
-  constructor(private settings: SettingsService) {}
+  constructor(
+    private settings: SettingsService,
+    private translate: TranslateService,
+  ) {}
+
+  /** 中文 -> 英文自动翻译（管理员） */
+  @Post('admin/translate')
+  @Roles('ADMIN')
+  translateZhToEn(@Body() body: { text: string }) {
+    return this.translate.zhToEn(body.text ?? '');
+  }
 
   /** 管理员查看收款二维码 */
   @Get('admin/settings/payment-qr')

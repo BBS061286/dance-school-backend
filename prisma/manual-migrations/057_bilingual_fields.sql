@@ -1,0 +1,5 @@
+-- 057: 课程/活动英文标题介绍（幂等）
+ALTER TABLE "Course" ADD COLUMN IF NOT EXISTS "titleEn" TEXT;
+ALTER TABLE "Course" ADD COLUMN IF NOT EXISTS "descriptionEn" TEXT;
+ALTER TABLE "Event" ADD COLUMN IF NOT EXISTS "titleEn" TEXT;
+ALTER TABLE "Event" ADD COLUMN IF NOT EXISTS "descriptionEn" TEXT;

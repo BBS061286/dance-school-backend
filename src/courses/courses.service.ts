@@ -71,7 +71,9 @@ export class CoursesService {
       const created = await tx.course.create({
         data: {
           title: dto.title,
+          titleEn: dto.titleEn,
           description: dto.description,
+          descriptionEn: dto.descriptionEn,
           format: dto.format,
           audience: dto.audience,
           skillLevel: dto.skill_level ?? 'NONE',
@@ -145,7 +147,9 @@ export class CoursesService {
       select: {
         id: true,
         title: true,
+        titleEn: true,
         description: true,
+        descriptionEn: true,
         format: true,
         audience: true,
         skillLevel: true,
@@ -237,7 +241,9 @@ export class CoursesService {
       select: {
         id: true,
         title: true,
+        titleEn: true,
         description: true,
+        descriptionEn: true,
         format: true,
         audience: true,
         skillLevel: true,
