@@ -20,6 +20,8 @@ export interface SearchStudentsQuery {
   term?: string;
   /** 课程类型：GROUP/ PRIVATE/MASTER，逗号分隔表示"同时上"（如 GROUP,PRIVATE） */
   formats?: string;
+  /** 学员状态：active（默认）/ inactive / all */
+  status?: 'active' | 'inactive' | 'all';
 }
 
 /**
@@ -503,7 +505,9 @@ export class StudentsService {
 
   async search(query: SearchStudentsQuery) {
     const where: Prisma.StudentWhereInput = {};
-    if (query.audience === 'YOUTH' || query.audience === 'ADULT') {
+    // 状态筛选：默认只看在读（active），停用学员归档不显示
+    if (query.status === 'inactive') where.isActive = false;
+    else if (query.status !== 'all') where.isActive = true;
       // 受众筛选：有家长关联的按关联类型；无关联的按年龄兜底（18岁为界）
       const eighteenYearsAgo = new Date();
       eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
@@ -754,5 +758,25 @@ export class StudentsService {
       attendanceMap: Object.fromEntries(attByKey),
       makeupQuotas,
     };
+  }
+
+  /** 学员停用/启用（ADMIN）。
+   * 少儿：只动 Student.isActive（不碰家长账号）。
+   * 成人：同时动 SELF 关联的 User.isActive，停用后无法登录（auth 已拦截）。
+   * 所有报名/缴费/出勤记录全部保留。 */
+  async setActive(id: string, isActive: boolean) {
+    const student = await this.prisma.student.findUnique({
+      where: { id },
+      include: { parentLinks: { select: { relationship: true, parentId: true } } },
+    });
+    if (!student) throw new NotFoundException('学员不存在');
+    const selfLink = student.parentLinks.find((l) => l.relationship === Relationship.SELF);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.student.update({ where: { id }, data: { isActive } });
+      if (selfLink) {
+        await tx.user.update({ where: { id: selfLink.parentId }, data: { isActive } });
+      }
+    });
+    return { id, isActive };
   }
 }

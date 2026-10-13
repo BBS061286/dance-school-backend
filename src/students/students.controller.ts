@@ -5,6 +5,7 @@ import { ParentCreateStudentDto } from './dto/parent-create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
 import { Transform } from 'class-transformer';
 import {
+  IsBoolean,
   IsIn,
   IsInt,
   IsOptional,
@@ -44,6 +45,15 @@ class SearchStudentsQueryDto {
   @IsOptional()
   @IsString({ message: 'formats 必须是逗号分隔的课程类型' })
   formats?: string;
+
+  @IsOptional()
+  @IsIn(['active', 'inactive', 'all'], { message: 'status 必须是 active / inactive / all' })
+  status?: 'active' | 'inactive' | 'all';
+}
+
+class SetStudentActiveDto {
+  @IsBoolean({ message: 'isActive 必须是布尔值' })
+  isActive!: boolean;
 }
 
 /** 学员查询路由（§6.12，ADMIN）。全局前缀 /api/v1 在 main.ts 设置。 */
@@ -132,5 +142,14 @@ export class StudentsController {
   @Get('admin/students/:id/detail')
   detail(@Param('id') id: string) {
     return this.students.detail(id);
+  }
+
+  /** 学员停用/启用：PATCH /admin/students/:id/active（ADMIN）
+   * 少儿：只动 Student.isActive（不碰家长账号，兄弟姐妹可能还在学）。
+   * 成人：同时动关联 User.isActive（SELF 关联），停用后无法登录；记录全部保留。 */
+  @Roles(UserRole.ADMIN)
+  @Patch('admin/students/:id/active')
+  setActive(@Param('id') id: string, @Body() dto: SetStudentActiveDto) {
+    return this.students.setActive(id, dto.isActive);
   }
 }
