@@ -508,6 +508,7 @@ export class StudentsService {
     // 状态筛选：默认只看在读（active），停用学员归档不显示
     if (query.status === 'inactive') where.isActive = false;
     else if (query.status !== 'all') where.isActive = true;
+    if (query.audience === 'YOUTH' || query.audience === 'ADULT') {
       // 受众筛选：有家长关联的按关联类型；无关联的按年龄兜底（18岁为界）
       const eighteenYearsAgo = new Date();
       eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
