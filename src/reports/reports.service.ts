@@ -23,11 +23,7 @@ export class ReportsService {
   }
 
   async summary() {
-    // ---- 学期列表（含"未分学期"兜底） ----
-    const terms = await this.prisma.term.findMany({
-      orderBy: { startDate: 'desc' },
-      select: { id: true, name: true, isActive: true },
-    });
+    // ---- 按学期聚合桶（含"未分学期"兜底） ----
     const byTerm = new Map<
       string,
       {
@@ -132,10 +128,20 @@ export class ReportsService {
     }
 
     // ---- 本学期老师课时 ----
-    const now = new Date();
+    // 本学期 = 今天所在的学期（startDate <= today <= endDate）；没有则退回 isActive 的第一条
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const termsFull = await this.prisma.term.findMany({
+      orderBy: { startDate: 'desc' },
+      select: { id: true, name: true, isActive: true, startDate: true, endDate: true },
+    });
     const currentTerm =
-      terms.find((t) => t.isActive) ??
-      terms.find((t) => true) ??
+      termsFull.find(
+        (t) =>
+          t.startDate.toISOString().slice(0, 10) <= todayStr &&
+          todayStr <= t.endDate.toISOString().slice(0, 10),
+      ) ??
+      termsFull.find((t) => t.isActive) ??
+      termsFull[0] ??
       null;
     const instructorHours: {
       instructorId: string;
@@ -188,7 +194,7 @@ export class ReportsService {
       byTerm: [...byTerm.values()].sort((a, b) => b.collectedCents - a.collectedCents),
       currentTerm: currentTerm ? { id: currentTerm.id, name: currentTerm.name } : null,
       instructorHours,
-      generatedAt: now.toISOString(),
+      generatedAt: new Date().toISOString(),
     };
   }
 }
