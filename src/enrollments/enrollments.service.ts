@@ -345,8 +345,7 @@ export class EnrollmentsService {
   }
 
   /** 运行候补自动转正：循环 promoteNext 直到无候选或名额满（循环上限 100 次） */
-  async runWaitlistPromotion(sessionId: string): Promise<{ promoted: string[] }> {
-    const session = await this.prisma.classSession.findUnique({
+  async runWaitlistPromotion(sessionId: string): Promise<{ promoted: string[] }> {    const session = await this.prisma.classSession.findUnique({
       where: { id: sessionId },
     });
     if (!session) throw new NotFoundException('班级不存在');
@@ -360,6 +359,48 @@ export class EnrollmentsService {
       return ids;
     });
     return { promoted };
+  }
+
+  /**
+   * 修改班级名额（管理员）。
+   * 规则：名额 1-50；不能低于已占座人数（CONFIRMED + PENDING_PAYMENT），
+   * 否则已报名的人会被挤出去。调大后候补按序自动转正（走正常转正流程，
+   * 含缴费通知与 24h 缴费期限）；调小只影响空余名额，不动已有报名。
+   */
+  async updateSessionCapacity(
+    sessionId: string,
+    capacity: number,
+  ): Promise<{
+    id: string;
+    capacity: number;
+    occupied: number;
+    promoted: number;
+  }> {
+    if (!Number.isInteger(capacity) || capacity < 1 || capacity > 50) {
+      throw new BadRequestException('名额为 1-50 人');
+    }
+    const session = await this.prisma.classSession.findUnique({
+      where: { id: sessionId },
+    });
+    if (!session) throw new NotFoundException('班级不存在');
+    const occupied = await this.prisma.enrollment.count({
+      where: {
+        classSessionId: sessionId,
+        status: { in: ['CONFIRMED', 'PENDING_PAYMENT'] },
+      },
+    });
+    if (capacity < occupied) {
+      throw new BadRequestException(
+        `名额不能低于已报名人数（${occupied} 人），请先处理已有报名`,
+      );
+    }
+    await this.prisma.classSession.update({
+      where: { id: sessionId },
+      data: { capacity },
+    });
+    // 调大：候补自动转正；调小或不变：无候补可进，promoteNext 直接返回 null
+    const { promoted } = await this.runWaitlistPromotion(sessionId);
+    return { id: sessionId, capacity, occupied, promoted: promoted.length };
   }
 
   // ------------------------------------------------------------------ 查询

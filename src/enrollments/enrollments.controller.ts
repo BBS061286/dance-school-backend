@@ -94,4 +94,14 @@ export class EnrollmentsController {
   runWaitlistPromotion(@Param('id') id: string) {
     return this.enrollments.runWaitlistPromotion(id);
   }
+
+  /** 修改班级名额（管理员）：调大后候补按序自动转正 */
+  @Roles(UserRole.ADMIN)
+  @Patch('admin/sessions/:id/capacity')
+  updateCapacity(
+    @Param('id') id: string,
+    @Body() dto: { capacity: number },
+  ) {
+    return this.enrollments.updateSessionCapacity(id, dto?.capacity);
+  }
 }
