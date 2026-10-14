@@ -632,6 +632,7 @@ export class AttendanceService {
 
     const userIds = new Set<string>();
     for (const e of enrollments) {
+      if (!e.student.isActive) continue;
       const links = e.student.parentLinks;
       const primary = links.filter((l) => l.isPrimaryContact);
       const targets = primary.length > 0 ? primary : links;
@@ -1010,7 +1011,7 @@ export class AttendanceService {
         status: { in: ['CONFIRMED', 'PENDING_PAYMENT'] },
       },
       include: {
-        student: { select: { id: true, name: true } },
+        student: { select: { id: true, name: true, isActive: true } },
       },
       orderBy: { enrolledAt: 'asc' },
     });
@@ -1022,6 +1023,7 @@ export class AttendanceService {
     const pending: unknown[] = [];
     const absent: unknown[] = [];
     for (const enrollment of enrollments) {
+      if (!enrollment.student.isActive) continue;
       const record = recordByEnrollment.get(enrollment.id) ?? null;
       const entry = { enrollment, record };
       if (record?.status === AttendanceStatus.CONFIRMED) confirmed.push(entry);

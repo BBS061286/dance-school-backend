@@ -118,6 +118,7 @@ export class TeacherService {
               select: {
                 id: true,
                 name: true,
+                isActive: true,
                 parentLinks: {
                   include: {
                     parent: {
@@ -134,6 +135,7 @@ export class TeacherService {
     const map = new Map<string, { id: string; name: string; students: string[] }>();
     for (const s of sessions) {
       for (const e of s.enrollments) {
+        if (!e.student.isActive) continue;
         for (const link of e.student.parentLinks) {
           const p = link.parent;
           if (p.role !== UserRole.PARENT || !p.isActive) continue;
@@ -159,6 +161,7 @@ export class TeacherService {
               select: {
                 id: true,
                 name: true,
+                isActive: true,
                 parentLinks: {
                   select: {
                     relationship: true,
@@ -177,6 +180,7 @@ export class TeacherService {
     const map = new Map<string, Target>();
     for (const s of sessions) {
       for (const e of s.enrollments) {
+        if (!e.student.isActive) continue;
         for (const link of e.student.parentLinks) {
           const p = link.parent;
           if (!p.isActive) continue;
@@ -211,6 +215,7 @@ export class TeacherService {
               select: {
                 id: true,
                 name: true,
+                isActive: true,
                 parentLinks: {
                   select: {
                     relationship: true,
@@ -225,7 +230,7 @@ export class TeacherService {
       },
     });
     if (!session) throw new NotFoundException('班级不存在或不是你任教的班级');
-    return session.enrollments.map((e) => {
+    return session.enrollments.filter((e) => e.student.isActive).map((e) => {
       const recipients = new Map<string, { id: string; name: string; kind: 'PARENT' | 'ADULT' }>();
       for (const link of e.student.parentLinks) {
         const p = link.parent;

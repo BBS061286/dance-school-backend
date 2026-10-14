@@ -428,12 +428,18 @@ export class RemindersService {
     return users.map((u) => u.id);
   }
 
-  /** 学生 → 家长：优先 isPrimaryContact，无主要联系人则取全部监护人；只返回活跃账号 */
+  /** 学生 → 家长：优先 isPrimaryContact，无主要联系人则取全部监护人；只返回活跃账号。
+   * 已停用学员跳过（不再发提醒），家长账号本身停用也跳过。 */
   private async resolveParentRecipients(
     studentIds: string[],
   ): Promise<string[]> {
     const parentIds = new Set<string>();
     for (const studentId of studentIds) {
+      const student = await this.prisma.student.findUnique({
+        where: { id: studentId },
+        select: { isActive: true },
+      });
+      if (!student?.isActive) continue;
       const links = await this.prisma.parentStudentLink.findMany({
         where: { studentId },
         include: { parent: { select: { id: true, isActive: true } } },

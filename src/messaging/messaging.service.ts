@@ -506,6 +506,7 @@ export class MessagingService {
               select: {
                 id: true,
                 name: true,
+                isActive: true,
                 parentLinks: {
                   select: {
                     relationship: true,
@@ -524,6 +525,7 @@ export class MessagingService {
     const onlyIds = Array.isArray(studentIds) && studentIds.length > 0 ? new Set(studentIds) : null;
     const targets = new Map<string, { id: string; role: UserRole; name: string }>();
     for (const e of session.enrollments) {
+      if (!e.student.isActive) continue;
       if (onlyIds && !onlyIds.has(e.student.id)) continue;
       for (const link of e.student.parentLinks) {
         const p = link.parent;

@@ -83,6 +83,16 @@ export class EnrollmentsService {
         if (!link) throw new ForbiddenException('无权为该学生报名');
       }
 
+      // 已停用学员不可新报名
+      const student = await tx.student.findUnique({
+        where: { id: dto.student_id },
+        select: { isActive: true },
+      });
+      if (!student) throw new NotFoundException('学员不存在');
+      if (!student.isActive) {
+        throw new ConflictException('该学员已停用，请先启用后再报名');
+      }
+
       // 防重：不允许同一学生在同一班级存在两条有效报名
       //（schema 按开放问题决议不加唯一约束，防重在代码里做）
       const dup = await tx.enrollment.findFirst({
