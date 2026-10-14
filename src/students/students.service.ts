@@ -764,6 +764,22 @@ export class StudentsService {
     };
   }
 
+  /** 管理员改学员基本信息（ADMIN）：姓名/英文名/生日/性别 */
+  async adminUpdateStudent(id: string, dto: { name?: string; nameEn?: string; dob?: string; gender?: any }) {
+    const student = await this.prisma.student.findUnique({ where: { id } });
+    if (!student) throw new NotFoundException('学员不存在');
+    const data: any = {};
+    if (dto.name !== undefined) data.name = dto.name.trim();
+    if (dto.nameEn !== undefined) data.nameEn = dto.nameEn?.trim() || null;
+    if (dto.gender !== undefined) data.gender = dto.gender;
+    if (dto.dob !== undefined) {
+      const d = new Date(dto.dob);
+      if (Number.isNaN(d.getTime())) throw new BadRequestException('出生日期格式非法');
+      data.dob = d;
+    }
+    return this.prisma.student.update({ where: { id }, data });
+  }
+
   /** 学员停用/启用（ADMIN）。
    * 少儿：只动 Student.isActive（不碰家长账号）。
    * 成人：同时动 SELF 关联的 User.isActive，停用后无法登录（auth 已拦截）。

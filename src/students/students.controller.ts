@@ -144,6 +144,13 @@ export class StudentsController {
     return this.students.detail(id);
   }
 
+  /** 管理员改学员基本信息：PATCH /admin/students/:id（ADMIN） */
+  @Roles(UserRole.ADMIN)
+  @Patch('admin/students/:id')
+  adminUpdateStudent(@Param('id') id: string, @Body() dto: UpdateStudentDto) {
+    return this.students.adminUpdateStudent(id, dto);
+  }
+
   /** 学员停用/启用：PATCH /admin/students/:id/active（ADMIN）
    * 少儿：只动 Student.isActive（不碰家长账号，兄弟姐妹可能还在学）。
    * 成人：同时动关联 User.isActive（SELF 关联），停用后无法登录；记录全部保留。 */

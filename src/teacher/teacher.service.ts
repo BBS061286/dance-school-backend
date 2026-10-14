@@ -246,7 +246,10 @@ export class TeacherService {
       }
       return {
         studentId: e.student.id,
-        studentName: e.student.name,
+        // 双语名（点名用）："陈晓雯 Wendy"，无英文名时回退中文名
+        studentName: e.student.nameEn?.trim()
+          ? `${e.student.name} ${e.student.nameEn.trim()}`
+          : e.student.name,
         recipients: [...recipients.values()],
       };
     });

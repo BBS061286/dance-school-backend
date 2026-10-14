@@ -178,7 +178,7 @@ export class ExtraLessonsService {
       },
       include: {
         slots: { orderBy: { date: 'asc' } },
-        student: { select: { id: true, name: true } },
+        student: { select: { id: true, name: true, nameEn: true } },
         campus: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -199,7 +199,7 @@ export class ExtraLessonsService {
       },
       include: {
         slots: { orderBy: { date: 'asc' } },
-        student: { select: { id: true, name: true } },
+        student: { select: { id: true, name: true, nameEn: true } },
         instructor: {
           include: { user: { select: { id: true, name: true } } },
         },
@@ -220,7 +220,7 @@ export class ExtraLessonsService {
       include: {
         request: {
           include: {
-            student: { select: { id: true, name: true } },
+            student: { select: { id: true, name: true, nameEn: true } },
             instructor: {
               include: { user: { select: { id: true, name: true } } },
             },
@@ -316,7 +316,7 @@ export class ExtraLessonsService {
   async reassignInstructor(requestId: string, instructorId: string) {
     const request = await this.prisma.extraLessonRequest.findUnique({
       where: { id: requestId },
-      include: { student: { select: { name: true } } },
+      include: { student: { select: { name: true, nameEn: true } } },
     });
     if (!request) throw new NotFoundException('私教单不存在');
     const instructor = await this.prisma.instructor.findUnique({
