@@ -28,6 +28,7 @@ export class StaffService {
       data: {
         email: dto.email,
         name: dto.name,
+        nameEn: dto.nameEn?.trim() || null,
         phone: dto.phone,
         role: UserRole.ADMIN,
         passwordHash,
@@ -38,6 +39,21 @@ export class StaffService {
     return { ...user, tempPassword };
   }
 
+  /** PATCH /admin/staff/:id：改员工姓名/英文名/电话 */
+  async update(id: string, dto: { name?: string; nameEn?: string; phone?: string }) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user || user.role !== UserRole.ADMIN) throw new ConflictException('员工不存在');
+    const data: { name?: string; nameEn?: string | null; phone?: string | null } = {};
+    if (dto.name !== undefined) data.name = dto.name.trim();
+    if (dto.nameEn !== undefined) data.nameEn = dto.nameEn?.trim() || null;
+    if (dto.phone !== undefined) data.phone = dto.phone?.trim() || null;
+    return this.prisma.user.update({
+      where: { id },
+      data,
+      select: { id: true, name: true, nameEn: true, email: true, phone: true },
+    });
+  }
+
   /** GET /admin/staff：管理员账号列表 */
   async list() {
     return this.prisma.user.findMany({
@@ -45,6 +61,7 @@ export class StaffService {
       select: {
         id: true,
         name: true,
+        nameEn: true,
         email: true,
         phone: true,
         isActive: true,

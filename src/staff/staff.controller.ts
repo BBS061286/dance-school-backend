@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CreateStaffDto } from './dto/staff.dto';
@@ -20,5 +20,11 @@ export class StaffController {
   @Get('admin/staff')
   list() {
     return this.staff.list();
+  }
+
+  /** 改员工信息：PATCH /admin/staff/:id */
+  @Patch('admin/staff/:id')
+  update(@Param('id') id: string, @Body() dto: { name?: string; nameEn?: string; phone?: string }) {
+    return this.staff.update(id, dto);
   }
 }

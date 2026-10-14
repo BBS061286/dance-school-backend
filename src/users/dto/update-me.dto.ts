@@ -17,6 +17,11 @@ export class UpdateMeDto {
   @IsString()
   nickname?: string;
 
+  /** 英文名（选填）：写入 User.nameEn */
+  @IsOptional()
+  @IsString()
+  nameEn?: string;
+
   /** 性别 */
   @IsOptional()
   @IsEnum(Gender)

@@ -5,6 +5,10 @@ export class CreateStaffDto {
   @IsString({ message: '姓名必须是字符串' })
   name: string;
 
+  @IsOptional()
+  @IsString()
+  nameEn?: string;
+
   @IsEmail({}, { message: '邮箱格式不正确' })
   email: string;
 

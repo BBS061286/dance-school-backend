@@ -1,0 +1,2 @@
+-- 059: 用户英文名（幂等）
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "nameEn" TEXT;

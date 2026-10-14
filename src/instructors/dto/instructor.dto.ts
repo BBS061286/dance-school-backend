@@ -14,6 +14,10 @@ export class UpdateInstructorDto {
   name?: string;
 
   @IsOptional()
+  @IsString()
+  nameEn?: string;
+
+  @IsOptional()
   @IsString({ message: '电话必须是字符串' })
   phone?: string;
 

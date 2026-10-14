@@ -65,9 +65,12 @@ export class TeacherService {
   /** PATCH /me/instructor/profile：{ bio, avatar_url }（头像写 User.avatarUrl） */
   async updateProfile(
     userId: string,
-    dto: { bio?: string; avatar_url?: string },
+    dto: { bio?: string; avatar_url?: string; nameEn?: string },
   ) {
     const instructor = await this.requireInstructor(userId);
+    const userData: { avatarUrl?: string; nameEn?: string | null } = {};
+    if (dto.avatar_url !== undefined) userData.avatarUrl = dto.avatar_url;
+    if (dto.nameEn !== undefined) userData.nameEn = dto.nameEn?.trim() || null;
     const [updated] = await this.prisma.$transaction([
       this.prisma.instructor.update({
         where: { id: instructor.id },
@@ -75,7 +78,7 @@ export class TeacherService {
       }),
       this.prisma.user.update({
         where: { id: userId },
-        data: { avatarUrl: dto.avatar_url },
+        data: userData,
       }),
     ]);
     return updated;

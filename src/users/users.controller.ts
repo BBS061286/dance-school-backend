@@ -48,9 +48,10 @@ export class UsersController {
     @Request() req: { user: RequestUser },
     @Body() dto: UpdateMeDto,
   ) {
-    const userData: { name?: string; nickname?: string | null; gender?: any; phone?: string | null; email?: string; avatarUrl?: string | null; preferredCampusIds?: string[] } = {};
+    const userData: { name?: string; nickname?: string | null; nameEn?: string | null; gender?: any; phone?: string | null; email?: string; avatarUrl?: string | null; preferredCampusIds?: string[] } = {};
     if (dto.name !== undefined) userData.name = dto.name;
     if (dto.nickname !== undefined) userData.nickname = dto.nickname || null;
+    if (dto.nameEn !== undefined) userData.nameEn = dto.nameEn.trim() || null;
     if (dto.gender !== undefined) userData.gender = dto.gender;
     if (dto.phone !== undefined) userData.phone = dto.phone || null;
     if (dto.avatarUrl !== undefined) userData.avatarUrl = dto.avatarUrl || null;

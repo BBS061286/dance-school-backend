@@ -9,6 +9,10 @@ export class UpdateInstructorProfileDto {
   @IsOptional()
   @IsString({ message: 'avatar_url 必须是字符串' })
   avatar_url?: string;
+
+  @IsOptional()
+  @IsString()
+  nameEn?: string;
 }
 
 /** 教师点名：{ enrollment_id }（§6.20） */

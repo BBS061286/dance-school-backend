@@ -393,8 +393,8 @@ export class InstructorsService {
       });
       if (!campus) throw new NotFoundException('校区不存在');
     }
-    // 同步更新关联 User 的姓名/电话/邮箱/状态
-    if (dto.name !== undefined || dto.phone !== undefined || dto.email !== undefined || dto.isActive !== undefined) {
+    // 同步更新关联 User 的姓名/英文名/电话/邮箱/状态
+    if (dto.name !== undefined || dto.nameEn !== undefined || dto.phone !== undefined || dto.email !== undefined || dto.isActive !== undefined) {
       const inst = await this.prisma.instructor.findUnique({
         where: { id },
         select: { userId: true },
@@ -404,6 +404,7 @@ export class InstructorsService {
           where: { id: inst.userId },
           data: {
             ...(dto.name !== undefined ? { name: dto.name } : {}),
+            ...(dto.nameEn !== undefined ? { nameEn: dto.nameEn?.trim() || null } : {}),
             ...(dto.phone !== undefined ? { phone: dto.phone || null } : {}),
             ...(dto.email !== undefined ? { email: dto.email } : {}),
             ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
@@ -506,7 +507,7 @@ export class InstructorsService {
   async browseInstructors() {
     const rows = await this.prisma.instructor.findMany({
       include: {
-        user: { select: { name: true, avatarUrl: true } },
+        user: { select: { name: true, nameEn: true, avatarUrl: true } },
         defaultCampus: { select: { name: true } },
       },
       orderBy: { createdAt: 'asc' },
@@ -514,6 +515,7 @@ export class InstructorsService {
     return rows.map((i) => ({
       id: i.id,
       name: i.user.name,
+      nameEn: i.user.nameEn,
       avatarUrl: i.user.avatarUrl,
       bio: i.bio,
       specialties: i.specialties,

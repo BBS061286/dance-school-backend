@@ -292,6 +292,7 @@ model User {
   id           String    @id @default(uuid())
   role         UserRole
   name         String
+  nameEn       String?   // 用户英文名（选填）：英文模式优先显示
   nickname     String?
   gender       Gender?
   email        String    @unique
