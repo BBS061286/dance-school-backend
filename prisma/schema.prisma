@@ -366,6 +366,7 @@ model Instructor {
 model Student {
   id           String    @id @default(uuid())
   name         String
+  nameEn       String?   // 学员英文名（选填）：英文模式优先显示
   dob          DateTime? @db.Date // v2 R8b：学员年龄的唯一事实来源（含成人学员）
   gender       Gender?
   medicalNotes String?

@@ -103,8 +103,8 @@ export class StudentsController {
     return this.students.parentGetStudent(req.user.id, id, term);
   }
 
-  /** 家长更新孩子信息：PATCH /me/students/:id */
-  @Roles(UserRole.PARENT)
+  /** 家长更新孩子信息 / 成人更新自己信息：PATCH /me/students/:id */
+  @Roles(UserRole.PARENT, UserRole.ADULT_STUDENT)
   @Patch('me/students/:id')
   parentUpdateStudent(
     @Request() req: { user: { id: string } },

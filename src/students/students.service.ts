@@ -146,6 +146,7 @@ export class StudentsService {
     const student = await this.prisma.student.create({
       data: {
         name: dto.name.trim(),
+        nameEn: dto.nameEn?.trim() || null,
         dob: new Date(dto.birthdate),
         gender: dto.gender ?? null,
         medicalNotes: dto.medicalNotes?.trim() || null,
@@ -357,6 +358,7 @@ export class StudentsService {
     return {
       id: st.id,
       name: st.name,
+      nameEn: st.nameEn,
       dob: st.dob,
       age,
       gender: st.gender,
@@ -397,13 +399,14 @@ export class StudentsService {
   }
 
   /** 家长移除孩子关联：DELETE /me/students/:id */
-  async parentUpdateStudent(parentId: string, studentId: string, dto: { name?: string; dob?: string; gender?: any }) {
+  async parentUpdateStudent(parentId: string, studentId: string, dto: { name?: string; nameEn?: string; dob?: string; gender?: any }) {
     const link = await this.prisma.parentStudentLink.findUnique({
       where: { parentId_studentId: { parentId, studentId } },
     });
     if (!link) throw new ForbiddenException('该学员不属于您');
     const data: any = {};
     if (dto.name !== undefined) data.name = dto.name;
+    if (dto.nameEn !== undefined) data.nameEn = dto.nameEn?.trim() || null;
     if (dto.gender !== undefined) data.gender = dto.gender;
     if (dto.dob !== undefined) {
       const d = new Date(dto.dob);

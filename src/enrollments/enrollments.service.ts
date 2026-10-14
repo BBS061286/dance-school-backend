@@ -166,7 +166,7 @@ export class EnrollmentsService {
     const enrollment = await this.prisma.enrollment.findUnique({
       where: { id: enrollmentId },
       include: {
-        student: { select: { name: true } },
+        student: { select: { name: true, nameEn: true } },
         classSession: {
           select: { course: { select: { title: true } } },
         },
@@ -211,7 +211,7 @@ export class EnrollmentsService {
     const enrollment = await this.prisma.enrollment.findUnique({
       where: { id: enrollmentId },
       include: {
-        student: { select: { id: true, name: true } },
+        student: { select: { id: true, name: true, nameEn: true } },
         classSession: {
           include: {
             course: {
@@ -420,7 +420,7 @@ export class EnrollmentsService {
         classSessionId: sessionId,
         status: { in: ['CONFIRMED', 'PENDING_PAYMENT', 'WAITLISTED'] },
       },
-      include: { student: { select: { id: true, name: true } } },
+      include: { student: { select: { id: true, name: true, nameEn: true } } },
       orderBy: { enrolledAt: 'asc' },
     });
     return list.sort((a, b) => {
@@ -442,7 +442,7 @@ export class EnrollmentsService {
     if (!session) throw new NotFoundException('班级不存在');
     return this.prisma.enrollment.findMany({
       where: { classSessionId: sessionId, status: 'WAITLISTED' },
-      include: { student: { select: { id: true, name: true } } },
+      include: { student: { select: { id: true, name: true, nameEn: true } } },
       orderBy: { waitlistPosition: 'asc' },
     });
   }
@@ -471,7 +471,7 @@ export class EnrollmentsService {
     if (mine === 0) throw new ForbiddenException('您没有学员在该班级上课');
     const confirmed = await this.prisma.enrollment.findMany({
       where: { classSessionId: sessionId, status: 'CONFIRMED' },
-      include: { student: { select: { name: true } } },
+      include: { student: { select: { name: true, nameEn: true } } },
       orderBy: { enrolledAt: 'asc' },
     });
     return confirmed.map((e) => ({ name: e.student.name }));
@@ -489,7 +489,7 @@ export class EnrollmentsService {
         OR: [{ studentId: { in: studentIds } }, { enrolledByParentId: userId }],
       },
       include: {
-        student: { select: { id: true, name: true } },
+        student: { select: { id: true, name: true, nameEn: true } },
         classSession: {
           select: {
             id: true,

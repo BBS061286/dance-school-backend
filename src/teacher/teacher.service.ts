@@ -118,6 +118,7 @@ export class TeacherService {
               select: {
                 id: true,
                 name: true,
+                nameEn: true,
                 isActive: true,
                 parentLinks: {
                   include: {
@@ -161,6 +162,7 @@ export class TeacherService {
               select: {
                 id: true,
                 name: true,
+                nameEn: true,
                 isActive: true,
                 parentLinks: {
                   select: {
@@ -215,6 +217,7 @@ export class TeacherService {
               select: {
                 id: true,
                 name: true,
+                nameEn: true,
                 isActive: true,
                 parentLinks: {
                   select: {
@@ -459,7 +462,7 @@ export class TeacherService {
         classSessionId: sessionId,
         status: { in: ['CONFIRMED', 'PENDING_PAYMENT'] },
       },
-      include: { student: { select: { id: true, name: true } } },
+      include: { student: { select: { id: true, name: true, nameEn: true } } },
       orderBy: { enrolledAt: 'asc' },
     });
     const occurrences = await this.prisma.sessionOccurrence.findMany({
@@ -630,7 +633,7 @@ export class TeacherService {
       this.prisma.studentReview.findMany({
         where: { createdById: userId },
         include: {
-          student: { select: { id: true, name: true } },
+          student: { select: { id: true, name: true, nameEn: true } },
           classSession: {
             include: { course: { select: { id: true, title: true } } },
           },

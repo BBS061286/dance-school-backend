@@ -1025,7 +1025,7 @@ export class AttendanceService {
         status: { in: ['CONFIRMED', 'PENDING_PAYMENT'] },
       },
       include: {
-        student: { select: { id: true, name: true, isActive: true } },
+        student: { select: { id: true, name: true, nameEn: true, isActive: true } },
       },
       orderBy: { enrolledAt: 'asc' },
     });

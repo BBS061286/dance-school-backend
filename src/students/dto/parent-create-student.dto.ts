@@ -6,6 +6,10 @@ export class ParentCreateStudentDto {
   @IsString()
   name: string;
 
+  @IsOptional()
+  @IsString()
+  nameEn?: string;
+
   @IsDateString()
   birthdate: string;
 

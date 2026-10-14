@@ -8,6 +8,10 @@ export class UpdateStudentDto {
   name?: string;
 
   @IsOptional()
+  @IsString()
+  nameEn?: string;
+
+  @IsOptional()
   @IsDateString()
   dob?: string;
 

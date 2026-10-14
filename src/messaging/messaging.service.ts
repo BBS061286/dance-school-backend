@@ -506,6 +506,7 @@ export class MessagingService {
               select: {
                 id: true,
                 name: true,
+                nameEn: true,
                 isActive: true,
                 parentLinks: {
                   select: {
