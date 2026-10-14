@@ -48,6 +48,13 @@ export class AttendanceController {
     return this.attendance.cancel(id, dto);
   }
 
+  /** 按课程排课规则生成课次（ADMIN）：已有课次时直接返回现有数量，不重复生成 */
+  @Roles(UserRole.ADMIN)
+  @Post('admin/sessions/:id/generate-occurrences')
+  generateOccurrences(@Param('id') id: string) {
+    return this.attendance.generateOccurrencesSafe(id);
+  }
+
   // ------------------------------------------------------------ 假期日历（ADMIN）
 
   /** 假期列表 */

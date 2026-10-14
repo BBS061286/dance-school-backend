@@ -495,8 +495,20 @@ export class EnrollmentsService {
             id: true,
             startTime: true,
             endTime: true,
-            campus: { select: { id: true, name: true } },
-            course: { select: { title: true, priceCents: true } },
+            campus: { select: { id: true, name: true, address: true } },
+            course: {
+              select: {
+                title: true,
+                priceCents: true,
+                timeRange: true,
+                weekdays: true,
+                term: { select: { id: true, name: true } },
+              },
+            },
+            occurrences: {
+              select: { date: true },
+              orderBy: { date: 'asc' },
+            },
           },
         },
       },

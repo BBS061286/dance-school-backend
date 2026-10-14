@@ -29,6 +29,20 @@ export class AttendanceService {
   // ---------------------------------------------------------------- 生成课次
 
   /**
+   * 生成课次的安全入口：已有课次时不重复生成，直接返回现有数量。
+   */
+  async generateOccurrencesSafe(classSessionId: string) {
+    const existing = await this.prisma.sessionOccurrence.count({
+      where: { classSessionId },
+    });
+    if (existing > 0) {
+      return { created: 0, existing };
+    }
+    const created = await this.generateOccurrences(classSessionId);
+    return { created: created.length, existing: 0 };
+  }
+
+  /**
    * 课次生成规则（§6.1）：按期（TERM）课程从 start_date 当周起，按
    * Course.weekdays 依次在这些星期几上生成课次，直到凑满 total_sessions。
    * 每节默认时间取 Course.timeRange；并据此推算 Course.endDate（未设置时）。
