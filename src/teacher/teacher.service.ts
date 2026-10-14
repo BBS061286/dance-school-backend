@@ -35,7 +35,7 @@ export class TeacherService {
     const instructor = await this.prisma.instructor.findUnique({
       where: { userId },
       include: {
-        user: { select: { id: true, name: true, email: true, avatarUrl: true } },
+        user: { select: { id: true, name: true, nameEn: true, email: true, avatarUrl: true } },
       },
     });
     if (!instructor) throw new ForbiddenException('当前用户不是教师');

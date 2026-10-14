@@ -77,7 +77,7 @@ export class InstructorsService {
     return this.prisma.instructor.findMany({
       include: {
         user: {
-          select: { id: true, name: true, email: true, phone: true, avatarUrl: true, isActive: true, createdAt: true },
+          select: { id: true, name: true, nameEn: true, email: true, phone: true, avatarUrl: true, isActive: true, createdAt: true },
         },
         _count: { select: { classSessions: true } },
       },
@@ -94,7 +94,7 @@ export class InstructorsService {
       where: { id },
       include: {
         user: {
-          select: { id: true, name: true, email: true, phone: true, avatarUrl: true, isActive: true, createdAt: true },
+          select: { id: true, name: true, nameEn: true, email: true, phone: true, avatarUrl: true, isActive: true, createdAt: true },
         },
         defaultCampus: { select: { id: true, name: true } },
         classSessions: {
