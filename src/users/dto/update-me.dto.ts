@@ -48,6 +48,11 @@ export class UpdateMeDto {
   @Min(0)
   age?: number;
 
+  /** 学员英文名（成人学员）：写入 SELF 绑定的 Student.nameEn */
+  @IsOptional()
+  @IsString()
+  studentNameEn?: string;
+
   /** 常去/可参加的校区（多选） */
   @IsOptional()
   @IsUUID('4', { each: true })

@@ -70,21 +70,28 @@ export class UsersController {
       });
     }
 
-    if (dto.dob !== undefined || dto.age !== undefined) {
+    if (dto.dob !== undefined || dto.age !== undefined || dto.studentNameEn !== undefined) {
       const link = await this.prisma.parentStudentLink.findFirst({
         where: { parentId: req.user.id, relationship: 'SELF' },
       });
       if (!link) {
         throw new BadRequestException('只有成人学员（有 SELF 绑定）可以更新年龄');
       }
-      const dob =
-        dto.dob !== undefined ? new Date(dto.dob) : this.dobFromAge(dto.age!);
-      if (Number.isNaN(dob.getTime())) {
-        throw new BadRequestException('出生日期格式非法');
+      const studentData: { dob?: Date; nameEn?: string | null } = {};
+      if (dto.dob !== undefined || dto.age !== undefined) {
+        const dob =
+          dto.dob !== undefined ? new Date(dto.dob) : this.dobFromAge(dto.age!);
+        if (Number.isNaN(dob.getTime())) {
+          throw new BadRequestException('出生日期格式非法');
+        }
+        studentData.dob = dob;
+      }
+      if (dto.studentNameEn !== undefined) {
+        studentData.nameEn = dto.studentNameEn.trim() || null;
       }
       await this.prisma.student.update({
         where: { id: link.studentId },
-        data: { dob },
+        data: studentData,
       });
     }
 

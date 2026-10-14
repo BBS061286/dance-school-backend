@@ -25,6 +25,7 @@ export class UsersService {
 
     let age: number | undefined;
     let dob: string | undefined;
+    let studentNameEn: string | null | undefined;
     if (user.role === 'ADULT_STUDENT') {
       const link = await this.prisma.parentStudentLink.findFirst({
         where: { parentId: userId, relationship: 'SELF' },
@@ -34,8 +35,9 @@ export class UsersService {
         age = calcAge(link.student.dob);
         dob = link.student.dob.toISOString();
       }
+      studentNameEn = link?.student?.nameEn ?? null;
     }
-    return { ...safe, age, dob };
+    return { ...safe, age, dob, studentNameEn };
   }
 
   /**
@@ -47,13 +49,13 @@ export class UsersService {
     if (user.role === 'ADULT_STUDENT') {
       const link = await this.prisma.parentStudentLink.findFirst({
         where: { parentId: user.id, relationship: 'SELF' },
-        include: { student: { select: { id: true, name: true, photoUrl: true } } },
+        include: { student: { select: { id: true, name: true, nameEn: true, photoUrl: true } } },
       });
       return link?.student ? [link.student] : [];
     }
     const links = await this.prisma.parentStudentLink.findMany({
       where: { parentId: user.id },
-      include: { student: { select: { id: true, name: true, photoUrl: true } } },
+      include: { student: { select: { id: true, name: true, nameEn: true, photoUrl: true } } },
       orderBy: { createdAt: 'asc' },
     });
     return links.map((l) => l.student);
