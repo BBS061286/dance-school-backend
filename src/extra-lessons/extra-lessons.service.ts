@@ -66,6 +66,14 @@ export class ExtraLessonsService {
    */
   async createRequest(user: RequestUser, dto: CreateExtraLessonRequestDto) {
     await this.assertStudentAccessible(user, dto.student_id);
+    // 已停用学员不可发起加课申请（与课程报名的停用规则保持一致）
+    const reqStudent = await this.prisma.student.findUnique({
+      where: { id: dto.student_id },
+      select: { isActive: true },
+    });
+    if (!reqStudent?.isActive) {
+      throw new ConflictException('该学员已停用，请先启用后再发起加课申请');
+    }
     return this.createRequestCore(
       {
         type: dto.type,
@@ -93,6 +101,10 @@ export class ExtraLessonsService {
       where: { id: dto.student_id },
     });
     if (!student) throw new NotFoundException(`学员不存在：${dto.student_id}`);
+    // 已停用学员不可发起加课申请（管理员代发起同样拦截，先启用再申请）
+    if (!student.isActive) {
+      throw new ConflictException('该学员已停用，请先启用后再发起加课申请');
+    }
     if (dto.instructor_id) {
       const instructor = await this.prisma.instructor.findUnique({
         where: { id: dto.instructor_id },

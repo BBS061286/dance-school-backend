@@ -251,6 +251,17 @@ export class EventsService {
 
     const studentId = await this.resolveRegistrationStudent(user, dto.student_id);
 
+    // 已停用学员不可报名活动/比赛（与课程报名的停用规则保持一致）
+    if (studentId) {
+      const regStudent = await this.prisma.student.findUnique({
+        where: { id: studentId },
+        select: { isActive: true },
+      });
+      if (!regStudent?.isActive) {
+        throw new ConflictException('该学员已停用，请先启用后再报名活动');
+      }
+    }
+
     let ticketQuantity: number | null = null;
     let ticketTotalCents: number | null = null;
     let ticketTierName: string | null = null;

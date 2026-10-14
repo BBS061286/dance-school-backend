@@ -115,6 +115,15 @@ export class MakeupService {
       throw new ConflictException('只有已确认的报名才能预约补课');
     }
 
+    // 已停用学员不可预约补课（与报名/提醒/花名册的停用规则保持一致）
+    const bookingStudent = await this.prisma.student.findUnique({
+      where: { id: enrollment.studentId },
+      select: { isActive: true },
+    });
+    if (!bookingStudent?.isActive) {
+      throw new ConflictException('该学员已停用，请先启用后再预约补课');
+    }
+
     // missed 场次（若提供）必须属于该报名所在班级
     if (dto.missed_occurrence_id) {
       const missed = await this.prisma.sessionOccurrence.findUnique({
