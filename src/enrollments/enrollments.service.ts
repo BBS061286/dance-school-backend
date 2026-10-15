@@ -895,4 +895,70 @@ export class EnrollmentsService {
         AND status = 'WAITLISTED'
         AND "waitlistPosition" < 0`;
   }
+
+  /**
+   * 超时待处理清单：status=PENDING_PAYMENT 且已过 paymentExpiresAt，
+   * 但因豁免（有 PENDING_CONFIRM 待审核付款，或有 SUCCEEDED 成功支付）
+   * 未被自动取消的报名。管理员逐个决定"取消名额"或"保留"。
+   */
+  async timeoutReviewList() {
+    const now = new Date();
+    return this.prisma.enrollment.findMany({
+      where: {
+        status: 'PENDING_PAYMENT',
+        paymentExpiresAt: { lt: now },
+        orderItems: {
+          some: {
+            order: {
+              payments: {
+                some: { status: { in: ['PENDING_CONFIRM', 'SUCCEEDED'] } },
+              },
+            },
+          },
+        },
+      },
+      include: {
+        student: { select: { id: true, name: true, nameEn: true } },
+        classSession: {
+          select: {
+            id: true,
+            course: { select: { id: true, title: true, titleEn: true } },
+            campus: { select: { id: true, name: true } },
+          },
+        },
+        orderItems: {
+          include: {
+            order: {
+              select: {
+                id: true,
+                payments: {
+                  select: { id: true, status: true, amountCents: true },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { paymentExpiresAt: 'asc' },
+    });
+  }
+
+  /**
+   * 保留：延长支付截止时间（默认 7 天），让报名从"超时待处理"清单中暂时移出。
+   */
+  async extendPaymentDeadline(id: string, days = 7) {
+    const enrollment = await this.prisma.enrollment.findUnique({
+      where: { id },
+      select: { id: true, status: true },
+    });
+    if (!enrollment) throw new NotFoundException('报名不存在');
+    if (enrollment.status !== 'PENDING_PAYMENT')
+      throw new BadRequestException('只有待支付的报名可以延长');
+    const paymentExpiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    return this.prisma.enrollment.update({
+      where: { id },
+      data: { paymentExpiresAt },
+      select: { id: true, paymentExpiresAt: true },
+    });
+  }
 }

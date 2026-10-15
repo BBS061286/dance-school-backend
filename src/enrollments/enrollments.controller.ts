@@ -61,6 +61,20 @@ export class EnrollmentsController {
     return this.enrollments.confirmEnrollment(id);
   }
 
+  /** 超时待处理清单：已超时但被豁免未自动取消的报名 */
+  @Roles(UserRole.ADMIN)
+  @Get('admin/enrollments/timeout-review')
+  timeoutReview() {
+    return this.enrollments.timeoutReviewList();
+  }
+
+  /** 保留：延长支付截止时间（默认 7 天） */
+  @Roles(UserRole.ADMIN)
+  @Patch('admin/enrollments/:id/extend-payment')
+  extendPayment(@Param('id') id: string, @Body() dto?: { days?: number }) {
+    return this.enrollments.extendPaymentDeadline(id, dto?.days ?? 7);
+  }
+
   /** 班级花名册（管理员 / 教师） */
   @Roles(UserRole.ADMIN, UserRole.INSTRUCTOR)
   @Get('admin/sessions/:id/roster')
