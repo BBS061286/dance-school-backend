@@ -16,7 +16,8 @@ const SYSTEM_REQUESTER: RequestUser = {
 /**
  * 支付超时扫描（设计文档 §五"支付超时任务"，每 10 分钟）：
  * 扫描 Enrollment.status=PENDING_PAYMENT 且 paymentExpiresAt < now()，
- * 排除关联订单下有 PENDING_CONFIRM Payment 的（超时豁免）：
+ * 排除关联订单下有 PENDING_CONFIRM Payment 的（超时豁免①：待管理员核实的线下付款），
+ * 以及有过 SUCCEEDED 成功支付的（超时豁免②：部分付款，是否取消名额由管理员决定）：
  * - promotedAt 为空（新报名）→ 调 enrollmentsService.cancelEnrollment（cancelReason="支付超时"，
  *   其内部释放名额并触发候补转正）；
  * - promotedAt 非空（候补转正）→ 事务内调 enrollmentsService.rollbackTimedOutPromotion。
@@ -42,11 +43,17 @@ export class PaymentTimeoutService {
       where: {
         status: 'PENDING_PAYMENT',
         paymentExpiresAt: { lt: now },
-        // 超时豁免：关联订单下存在待管理员核实的线下付款
+        // 超时豁免：① 关联订单下存在待管理员核实的线下付款；② 关联订单下有过成功支付（部分付款）
         NOT: {
           orderItems: {
             some: {
-              order: { payments: { some: { status: 'PENDING_CONFIRM' } } },
+              order: {
+                payments: {
+                  some: {
+                    status: { in: ['PENDING_CONFIRM', 'SUCCEEDED'] },
+                  },
+                },
+              },
             },
           },
         },
