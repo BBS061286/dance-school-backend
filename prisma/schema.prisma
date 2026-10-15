@@ -50,6 +50,16 @@ enum Gender {
   // 开放问题：文档未定义该枚举值，暂用草稿值，需用户确认
 }
 
+// 学员停用原因（2026-10-15 Bin 定：学期内不退款，除非不可抗力如生病）
+enum DeactivationReason {
+  ILLNESS_INJURY // 生病/受伤（不可抗力，唯一可走退款例外）
+  RELOCATION     // 搬家/出国
+  SCHEDULE_CONFLICT // 时间冲突
+  DISSATISFIED   // 对课程不满意
+  FINANCIAL      // 费用原因
+  OTHER          // 其他
+}
+
 enum Relationship {
   MOTHER
   FATHER
@@ -373,6 +383,11 @@ model Student {
   medicalNotes String?
   photoUrl     String?
   isActive     Boolean   @default(true)
+  // 停用原因（2026-10-15）：停用时必填，启用时清空
+  deactivationReason DeactivationReason?
+  deactivatedAt      DateTime?
+  deactivationNote   String?
+  deactivatedById    String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 

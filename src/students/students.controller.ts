@@ -17,6 +17,7 @@ import {
 import { Roles } from '../auth/decorators/roles.decorator';
 import { StudentsService } from './students.service';
 import { AdminCreateStudentDto } from './dto/admin-create-student.dto';
+import { RequestUser } from '../common/types';
 
 class SearchStudentsQueryDto {
   @IsOptional()
@@ -54,6 +55,14 @@ class SearchStudentsQueryDto {
 class SetStudentActiveDto {
   @IsBoolean({ message: 'isActive 必须是布尔值' })
   isActive!: boolean;
+
+  @IsOptional()
+  @IsString()
+  reason?: string;
+
+  @IsOptional()
+  @IsString()
+  note?: string;
 }
 
 /** 学员查询路由（§6.12，ADMIN）。全局前缀 /api/v1 在 main.ts 设置。 */
@@ -156,7 +165,7 @@ export class StudentsController {
    * 成人：同时动关联 User.isActive（SELF 关联），停用后无法登录；记录全部保留。 */
   @Roles(UserRole.ADMIN)
   @Patch('admin/students/:id/active')
-  setActive(@Param('id') id: string, @Body() dto: SetStudentActiveDto) {
-    return this.students.setActive(id, dto.isActive);
+  setActive(@Param('id') id: string, @Body() dto: SetStudentActiveDto, @Request() req: { user: RequestUser }) {
+    return this.students.setActive(id, dto.isActive, dto.reason, dto.note, req.user.id);
   }
 }

@@ -784,7 +784,7 @@ export class StudentsService {
    * 少儿：只动 Student.isActive（不碰家长账号）。
    * 成人：同时动 SELF 关联的 User.isActive，停用后无法登录（auth 已拦截）。
    * 所有报名/缴费/出勤记录全部保留。 */
-  async setActive(id: string, isActive: boolean) {
+  async setActive(id: string, isActive: boolean, reason?: string, note?: string, byUserId?: string) {
     const student = await this.prisma.student.findUnique({
       where: { id },
       include: { parentLinks: { select: { relationship: true, parentId: true } } },
@@ -792,7 +792,31 @@ export class StudentsService {
     if (!student) throw new NotFoundException('学员不存在');
     const selfLink = student.parentLinks.find((l) => l.relationship === Relationship.SELF);
     await this.prisma.$transaction(async (tx) => {
-      await tx.student.update({ where: { id }, data: { isActive } });
+      if (!isActive) {
+        // 停用：原因必填（前端已校验），写入原因/时间/备注/操作人
+        await tx.student.update({
+          where: { id },
+          data: {
+            isActive: false,
+            deactivationReason: (reason as any) || 'OTHER',
+            deactivatedAt: new Date(),
+            deactivationNote: note || null,
+            deactivatedById: byUserId || null,
+          },
+        });
+      } else {
+        // 启用：清空停用原因字段
+        await tx.student.update({
+          where: { id },
+          data: {
+            isActive: true,
+            deactivationReason: null,
+            deactivatedAt: null,
+            deactivationNote: null,
+            deactivatedById: null,
+          },
+        });
+      }
       if (selfLink) {
         await tx.user.update({ where: { id: selfLink.parentId }, data: { isActive } });
       }
