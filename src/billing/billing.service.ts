@@ -968,9 +968,40 @@ export class BillingService {
       orderBy: { classSession: { startTime: 'desc' } },
       take: 200,
     });
+    // 批量查缴费汇总（避免 N+1：原来每条报名 2 次查询）
+    const enrollmentIds = enrollments.map((e) => e.id);
+    const allItems = enrollmentIds.length > 0
+      ? await this.prisma.orderItem.findMany({
+          where: { enrollmentId: { in: enrollmentIds } },
+          include: {
+            order: { include: { payments: true } },
+            refunds: true,
+          },
+        })
+      : [];
+    const itemsByEnrollment = new Map<string, typeof allItems>();
+    for (const item of allItems) {
+      const list = itemsByEnrollment.get(item.enrollmentId!) ?? [];
+      list.push(item);
+      itemsByEnrollment.set(item.enrollmentId!, list);
+    }
     const rows: Array<Record<string, unknown>> = [];
     for (const e of enrollments) {
-      const summary = await this.enrollmentsService.getEnrollmentPaymentSummary(e.id);
+      const items = itemsByEnrollment.get(e.id) ?? [];
+      let paidCents = 0;
+      let refundedCents = 0;
+      for (const item of items) {
+        const orderPaid = item.order.payments
+          .filter((p) => p.status === 'SUCCEEDED')
+          .reduce((sum, p) => sum + p.amountCents, 0);
+        const shareCents =
+          item.order.amountCents > 0
+            ? Math.round((orderPaid * item.amountCents) / item.order.amountCents)
+            : 0;
+        const itemRefunded = item.refunds.reduce((sum, r) => sum + r.amountCents, 0);
+        paidCents += shareCents;
+        refundedCents += itemRefunded;
+      }
       rows.push({
         id: e.id,
         status: e.status,
@@ -978,9 +1009,9 @@ export class BillingService {
         course: e.classSession.course,
         campus: e.classSession.campus,
         startTime: e.classSession.startTime,
-        paidCents: summary.paidCents,
-        refundedCents: summary.refundedCents,
-        netCents: summary.netCents,
+        paidCents,
+        refundedCents,
+        netCents: paidCents - refundedCents,
       });
     }
     return rows;
@@ -1012,9 +1043,40 @@ export class BillingService {
       orderBy: { createdAt: 'desc' },
       take: 200,
     });
+    // 批量查缴费汇总（避免 N+1）
+    const regIds = regs.map((r) => r.id);
+    const allItems = regIds.length > 0
+      ? await this.prisma.orderItem.findMany({
+          where: { eventRegistrationId: { in: regIds } },
+          include: {
+            order: { include: { payments: true } },
+            refunds: true,
+          },
+        })
+      : [];
+    const itemsByReg = new Map<string, typeof allItems>();
+    for (const item of allItems) {
+      const list = itemsByReg.get(item.eventRegistrationId!) ?? [];
+      list.push(item);
+      itemsByReg.set(item.eventRegistrationId!, list);
+    }
     const rows: Array<Record<string, unknown>> = [];
     for (const r of regs) {
-      const summary = await this.getEventRegistrationPaymentSummary(r.id);
+      const items = itemsByReg.get(r.id) ?? [];
+      let paidCents = 0;
+      let refundedCents = 0;
+      for (const item of items) {
+        const orderPaid = item.order.payments
+          .filter((p) => p.status === 'SUCCEEDED')
+          .reduce((sum, p) => sum + p.amountCents, 0);
+        const shareCents =
+          item.order.amountCents > 0
+            ? Math.round((orderPaid * item.amountCents) / item.order.amountCents)
+            : 0;
+        const itemRefunded = item.refunds.reduce((sum, rr) => sum + rr.amountCents, 0);
+        paidCents += shareCents;
+        refundedCents += itemRefunded;
+      }
       rows.push({
         id: r.id,
         status: r.status,
@@ -1024,9 +1086,9 @@ export class BillingService {
         ticketTotalCents: r.ticketTotalCents,
         student: r.student,
         event: r.event,
-        paidCents: summary.paidCents,
-        refundedCents: summary.refundedCents,
-        netCents: summary.netCents,
+        paidCents,
+        refundedCents,
+        netCents: paidCents - refundedCents,
       });
     }
     return rows;
