@@ -350,7 +350,9 @@ model Instructor {
   userId          String   @unique
   user            User     @relation(fields: [userId], references: [id])
   bio             String?
+  bioEn           String?
   specialties     String[] // 如 Ballet / HipHop
+  specialtiesEn   String[] @default([])
   defaultCampusId String?
   defaultCampus   Campus?  @relation(fields: [defaultCampusId], references: [id])
   // 可排课时间：每周哪几天有空（0=周日..6=周六），空数组=未设置

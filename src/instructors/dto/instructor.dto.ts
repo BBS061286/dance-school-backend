@@ -46,6 +46,10 @@ export class UpdateInstructorDto {
   bio?: string;
 
   @IsOptional()
+  @IsString()
+  bioEn?: string;
+
+  @IsOptional()
   @Transform(({ value }) =>
     Array.isArray(value)
       ? value
@@ -56,6 +60,18 @@ export class UpdateInstructorDto {
   @IsArray({ message: 'specialties 必须是数组' })
   @IsString({ each: true, message: 'specialties 元素必须是字符串' })
   specialties?: string[];
+
+  @IsOptional()
+  @Transform(({ value }) =>
+    Array.isArray(value)
+      ? value
+      : typeof value === 'string'
+        ? value.split(',').map((s: string) => s.trim()).filter(Boolean)
+        : value,
+  )
+  @IsArray()
+  @IsString({ each: true })
+  specialtiesEn?: string[];
 
   @IsOptional()
   @IsUUID('4', { message: 'default_campus_id 必须是合法的 UUID' })
@@ -105,6 +121,10 @@ export class CreateInstructorDto {
   bio?: string;
 
   @IsOptional()
+  @IsString()
+  bioEn?: string;
+
+  @IsOptional()
   @Transform(({ value }) =>
     Array.isArray(value)
       ? value
@@ -115,6 +135,18 @@ export class CreateInstructorDto {
   @IsArray({ message: 'specialties 必须是数组' })
   @IsString({ each: true, message: 'specialties 元素必须是字符串' })
   specialties?: string[];
+
+  @IsOptional()
+  @Transform(({ value }) =>
+    Array.isArray(value)
+      ? value
+      : typeof value === 'string'
+        ? value.split(',').map((s: string) => s.trim()).filter(Boolean)
+        : value,
+  )
+  @IsArray()
+  @IsString({ each: true })
+  specialtiesEn?: string[];
 
   @IsOptional()
   @IsUUID('4', { message: 'default_campus_id 必须是合法的 UUID' })

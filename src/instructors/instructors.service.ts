@@ -60,7 +60,9 @@ export class InstructorsService {
         data: {
           userId: user.id,
           bio: dto.bio,
+          bioEn: dto.bioEn,
           specialties: dto.specialties ?? [],
+          specialtiesEn: dto.specialtiesEn ?? [],
           defaultCampusId: dto.default_campus_id,
           ...(dto.messagingEnabled !== undefined ? { messagingEnabled: dto.messagingEnabled } : {}),
         },
@@ -416,8 +418,12 @@ export class InstructorsService {
       where: { id },
       data: {
         ...(dto.bio !== undefined ? { bio: dto.bio } : {}),
+        ...(dto.bioEn !== undefined ? { bioEn: dto.bioEn } : {}),
         ...(dto.specialties !== undefined
           ? { specialties: dto.specialties }
+          : {}),
+        ...(dto.specialtiesEn !== undefined
+          ? { specialtiesEn: dto.specialtiesEn }
           : {}),
         ...(dto.default_campus_id !== undefined
           ? { defaultCampusId: dto.default_campus_id || null }
@@ -518,7 +524,9 @@ export class InstructorsService {
       nameEn: i.user.nameEn,
       avatarUrl: i.user.avatarUrl,
       bio: i.bio,
+      bioEn: i.bioEn,
       specialties: i.specialties,
+      specialtiesEn: i.specialtiesEn,
       campusName: i.defaultCampus?.name ?? null,
     }));
   }
@@ -534,7 +542,9 @@ export class InstructorsService {
       select: {
         id: true,
         bio: true,
+        bioEn: true,
         specialties: true,
+        specialtiesEn: true,
         user: { select: { name: true, avatarUrl: true, isActive: true } },
         classSessions: {
           where: { status: { not: 'CANCELLED' } },
@@ -578,7 +588,9 @@ export class InstructorsService {
       name: instructor.user.name,
       avatarUrl: instructor.user.avatarUrl,
       bio: instructor.bio,
+      bioEn: instructor.bioEn,
       specialties: instructor.specialties,
+      specialtiesEn: instructor.specialtiesEn,
       classes: instructor.classSessions.map((s) => ({
         courseTitle: s.course.title,
         campusName: s.campus.name,
