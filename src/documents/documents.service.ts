@@ -417,6 +417,7 @@ export class DocumentsService {
       include: {
         student: { select: { id: true, name: true } },
         signedBy: { select: { id: true, name: true } },
+        document: { select: { id: true, title: true, fileUrl: true } },
       },
     });
     if (!signature) throw new NotFoundException('尚未签署');
