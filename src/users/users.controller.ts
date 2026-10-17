@@ -29,6 +29,16 @@ export class UsersController {
     return this.authService.changePassword(req.user.id, dto.oldPassword, dto.newPassword);
   }
 
+  /** 管理员重置用户密码：POST /admin/users/reset-password（ADMIN） */
+  @Roles(UserRole.ADMIN)
+  @Post('admin/users/reset-password')
+  resetPassword(@Body() dto: { email: string; newPassword: string }) {
+    if (!dto.email || !dto.newPassword || dto.newPassword.length < 6) {
+      throw new BadRequestException('邮箱和新密码（至少6位）必填');
+    }
+    return this.authService.adminResetPassword(dto.email, dto.newPassword);
+  }
+
   /** 我的学员列表（家长 / 成人学员）：[{ id, name }] */
   @Roles(UserRole.PARENT, UserRole.ADULT_STUDENT)
   @Get('me/students')

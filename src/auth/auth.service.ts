@@ -108,6 +108,18 @@ export class AuthService {
     return { message: '密码修改成功' };
   }
 
+  /** 管理员重置用户密码：直接设置新密码（ADMIN） */
+  async adminResetPassword(email: string, newPassword: string) {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) throw new BadRequestException('用户不存在');
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash, mustChangePassword: false },
+    });
+    return { message: '密码重置成功' };
+  }
+
   /** 忘记密码：D1 仅 stub，真实邮件发送在后续阶段接入 SendGrid 后实现 */
   async forgotPassword(email: string) {
     return {
