@@ -370,6 +370,7 @@ model Instructor {
   classSessions   ClassSession[]
   checkins        InstructorCheckin[]
   extraLessons    ExtraLessonRequest[] @relation("LessonInstructor")
+  preferredExtraLessons ExtraLessonRequest[] @relation("PreferredInstructor")
   substituteOccurrences SessionOccurrence[] @relation("SubstituteTeaching")
   cancelRequests  OccurrenceCancelRequest[]
 }
@@ -949,8 +950,10 @@ model ExtraLessonRequest {
   sourceCourse       Course?              @relation("SourceCourse", fields: [sourceCourseId], references: [id])
   sourceEnrollmentId String?
   sourceEnrollment   Enrollment?          @relation("SourceEnrollment", fields: [sourceEnrollmentId], references: [id])
-  instructorId       String?              // 6.17 任教教师
+  instructorId       String?              // 6.17 任教教师（管理员最终指派）
   instructor         Instructor?          @relation("LessonInstructor", fields: [instructorId], references: [id])
+  preferredInstructorId String?           // 学员/家长期望的老师
+  preferredInstructor   Instructor?       @relation("PreferredInstructor", fields: [preferredInstructorId], references: [id])
   createdById        String
   createdBy          User                 @relation("ExtraLessonCreator", fields: [createdById], references: [id])
   adminNote          String?

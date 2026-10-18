@@ -44,6 +44,11 @@ export class CreateExtraLessonRequestDto {
   @IsString()
   campus_id?: string;
 
+  /** 期望的老师（可选） */
+  @IsOptional()
+  @IsUUID('4')
+  preferred_instructor_id?: string;
+
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })

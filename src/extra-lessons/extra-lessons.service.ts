@@ -79,6 +79,7 @@ export class ExtraLessonsService {
         type: dto.type,
         studentId: dto.student_id,
         instructorId: null,
+        preferredInstructorId: dto.preferred_instructor_id ?? null,
         content: dto.content,
         location: dto.location,
         campusId: dto.campus_id,
@@ -133,6 +134,7 @@ export class ExtraLessonsService {
       type: ExtraLessonType;
       studentId: string;
       instructorId: string | null;
+      preferredInstructorId?: string | null;
       content?: string;
       location?: string;
       campusId?: string;
@@ -152,6 +154,7 @@ export class ExtraLessonsService {
         campusId: input.campusId ?? null,
         initiatedBy,
         instructorId: input.instructorId,
+        preferredInstructorId: input.preferredInstructorId ?? null,
         createdById,
         slots: {
           create: input.slots.map((s) => ({
@@ -201,6 +204,9 @@ export class ExtraLessonsService {
         slots: { orderBy: { date: 'asc' } },
         student: { select: { id: true, name: true, nameEn: true } },
         instructor: {
+          include: { user: { select: { id: true, name: true } } },
+        },
+        preferredInstructor: {
           include: { user: { select: { id: true, name: true } } },
         },
         campus: { select: { id: true, name: true } },
