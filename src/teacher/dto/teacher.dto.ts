@@ -13,6 +13,22 @@ export class UpdateInstructorProfileDto {
   @IsOptional()
   @IsString()
   nameEn?: string;
+
+  @IsOptional()
+  @IsString()
+  email?: string;
+
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @IsOptional()
+  @IsString()
+  bioEn?: string;
+
+  @IsOptional()
+  @IsUUID('4', { message: 'default_campus_id 必须是合法的 UUID' })
+  default_campus_id?: string;
 }
 
 /** 教师点名：{ enrollment_id }（§6.20） */

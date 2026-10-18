@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -35,7 +36,8 @@ export class TeacherService {
     const instructor = await this.prisma.instructor.findUnique({
       where: { userId },
       include: {
-        user: { select: { id: true, name: true, nameEn: true, email: true, avatarUrl: true } },
+        user: { select: { id: true, name: true, nameEn: true, email: true, avatarUrl: true, phone: true } },
+        defaultCampus: { select: { id: true, name: true } },
       },
     });
     if (!instructor) throw new ForbiddenException('当前用户不是教师');
@@ -65,16 +67,59 @@ export class TeacherService {
   /** PATCH /me/instructor/profile：{ bio, avatar_url }（头像写 User.avatarUrl） */
   async updateProfile(
     userId: string,
-    dto: { bio?: string; avatar_url?: string; nameEn?: string },
+    dto: {
+      bio?: string;
+      avatar_url?: string;
+      nameEn?: string;
+      email?: string;
+      phone?: string;
+      bioEn?: string;
+      default_campus_id?: string;
+    },
   ) {
     const instructor = await this.requireInstructor(userId);
-    const userData: { avatarUrl?: string; nameEn?: string | null } = {};
+    const userData: {
+      avatarUrl?: string;
+      nameEn?: string | null;
+      email?: string;
+      phone?: string | null;
+    } = {};
     if (dto.avatar_url !== undefined) userData.avatarUrl = dto.avatar_url;
     if (dto.nameEn !== undefined) userData.nameEn = dto.nameEn?.trim() || null;
+    if (dto.phone !== undefined) userData.phone = dto.phone?.trim() || null;
+    // 邮箱唯一性检查
+    if (dto.email !== undefined && dto.email.trim()) {
+      const newEmail = dto.email.trim().toLowerCase();
+      const exists = await this.prisma.user.findFirst({
+        where: { email: newEmail, NOT: { id: userId } },
+        select: { id: true },
+      });
+      if (exists) throw new ConflictException('该邮箱已被使用');
+      userData.email = newEmail;
+    }
+    const instructorData: {
+      bio?: string;
+      bioEn?: string | null;
+      defaultCampusId?: string | null;
+    } = {};
+    if (dto.bio !== undefined) instructorData.bio = dto.bio;
+    if (dto.bioEn !== undefined) instructorData.bioEn = dto.bioEn?.trim() || null;
+    if (dto.default_campus_id !== undefined) {
+      if (dto.default_campus_id) {
+        const campus = await this.prisma.campus.findUnique({
+          where: { id: dto.default_campus_id },
+          select: { id: true },
+        });
+        if (!campus) throw new BadRequestException('校区不存在');
+        instructorData.defaultCampusId = dto.default_campus_id;
+      } else {
+        instructorData.defaultCampusId = null;
+      }
+    }
     const [updated] = await this.prisma.$transaction([
       this.prisma.instructor.update({
         where: { id: instructor.id },
-        data: { bio: dto.bio },
+        data: instructorData,
       }),
       this.prisma.user.update({
         where: { id: userId },
