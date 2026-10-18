@@ -111,7 +111,15 @@ export class PaymentTimeoutService {
 
     let n = 0;
     for (const o of orders) {
-      if (o.items.length === 0) continue;
+      // 无明细的 PENDING 订单也是僵尸（报名记录已被删除），直接取消
+      if (o.items.length === 0) {
+        await this.prisma.order.update({
+          where: { id: o.id },
+          data: { status: 'CANCELLED' },
+        });
+        n++;
+        continue;
+      }
       const hasLiveItem = o.items.some((it) => {
         const en = it.enrollment;
         if (en && (en.status === 'PENDING_PAYMENT' || en.status === 'CONFIRMED'))
